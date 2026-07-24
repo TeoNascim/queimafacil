@@ -1,0 +1,13 @@
+.next/
+.next-corrupted-*/
+out/
+dist/
+node_modules/
+.env*
+!.env.example
+*.log
+work/
+outputs/
+.openai/
+.codex/
+.agents/
