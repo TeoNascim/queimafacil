@@ -39,3 +39,7 @@
 .delete-user:hover{background:#fdeaea!important}
 .protected-user{color:#8b969e;font-size:9px;text-align:center}
 @media(max-width:760px){.user-row{grid-template-columns:38px 1fr auto}.user-row .delete-user,.user-row .protected-user{display:block;grid-column:3}.user-row .role{grid-column:2;margin-top:5px}}
+.delete-record{border:1px solid #f0baba!important;background:#fff6f6!important;color:#c53d3d!important;border-radius:7px!important;padding:7px 10px!important;font-size:10px;font-weight:700}
+.delete-record:hover{background:#fde7e7!important}
+.team-meta>div{display:flex;gap:6px;align-items:center}
+.tournament-card.featured .delete-record{border-color:#ffb6aa!important;background:#ffffff18!important;color:#ffd1c8!important}

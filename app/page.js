@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
-  claimInvitation, createInvitation, deleteOrganizationUser, getCurrentContext, getGroups, getInvitations,
+  claimInvitation, createInvitation, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
+  getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore
 } from "../lib/supabase/data";
@@ -198,6 +199,21 @@ export default function App() {
       notify(error.message || "Não foi possível excluir o usuário.");
     }
   };
+  const deleteRecord = async (type, record) => {
+    const settings = {
+      player: { name: record.full_name, warning: "O jogador será removido da equipe.", action: () => deletePlayer(record.id), success: "Jogador excluído com sucesso" },
+      team: { name: record.name, warning: "Os jogadores e todas as partidas vinculadas a esta equipe também serão excluídos.", action: () => deleteTeam(record.id), success: "Equipe excluída com sucesso" },
+      tournament: { name: record.name, warning: "Equipes, jogadores, grupos, partidas, placares e súmulas deste torneio também serão excluídos.", action: () => deleteTournament(record.id), success: "Torneio excluído com sucesso" }
+    }[type];
+    if (!settings || !window.confirm(`Excluir “${settings.name}”?\n\n${settings.warning}\n\nEsta ação não pode ser desfeita.`)) return;
+    try {
+      await settings.action();
+      await refreshWorkspace(context.organization.id, type === "tournament" ? undefined : activeTournament?.id);
+      notify(settings.success);
+    } catch (error) {
+      notify(error.message || "Não foi possível realizar a exclusão.");
+    }
+  };
   const notify = text => { setToast(text); setTimeout(() => setToast(""), 2600); };
   const title = menu.find(x => x[0] === page)?.[1] || "Visão geral";
   const roleKey = context?.role;
@@ -259,10 +275,10 @@ export default function App() {
           {page === "dashboard" && (activeTournament ? <Dashboard matches={matches} teams={teamRows} players={playerRows} classification={classification} setPage={setPage} setModal={setModal} canScore={canScore} canManage={canManage} /> : <Onboarding setModal={setModal} canManage={canManage} />)}
           {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} />}
           {page === "standings" && <Standings full rows={classification} />}
-          {page === "teams" && <Teams rows={teamRows} setModal={setModal} canManage={canManage} />}
+          {page === "teams" && <Teams rows={teamRows} setModal={setModal} canManage={canManage} canDelete={roleKey === "admin"} onDelete={item => deleteRecord("team", item)} />}
           {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} />}
-          {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} />}
-          {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} />}
+          {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={roleKey === "admin"} onDelete={item => deleteRecord("tournament", item)} />}
+          {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} canDelete={roleKey === "admin"} onDelete={item => deleteRecord("player", item)} />}
           {page === "reports" && <Reports matches={matches} audit={auditRows} setModal={setModal} notify={notify} />}
           {page === "regulations" && <Regulations />}
           {page === "users" && roleKey === "admin" && <Users rows={userRows} invitations={invitationRows} setModal={setModal} onDelete={deleteUser} currentUserId={session.user.id} />}
@@ -520,9 +536,9 @@ function Matches({ matches, setModal, canManage, canScore }) {
   </section>;
 }
 
-function Teams({ rows, setModal, canManage }) {
+function Teams({ rows, setModal, canManage, canDelete, onDelete }) {
   return <><div className="page-tools"><div><h2>Equipes inscritas</h2><p>{rows.length} equipes cadastradas no torneio</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newTeam" })}>＋ Nova equipe</button>}</div>
-    {rows.length ? <div className="team-grid">{rows.map(t => <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>Dados sincronizados</span><button>Ver equipe →</button></div></article>)}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
+    {rows.length ? <div className="team-grid">{rows.map(t => <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>Dados sincronizados</span><div><button>Ver equipe →</button>{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>)}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
 }
 
 function Groups({ rows, teams, setModal, onAssign, canManage }) {
@@ -536,14 +552,14 @@ function Groups({ rows, teams, setModal, onAssign, canManage }) {
   </>;
 }
 
-function Tournaments({ rows, active, onPublish, setPage, setModal, canManage }) {
+function Tournaments({ rows, active, onPublish, setPage, setModal, canManage, canDelete, onDelete }) {
   return <><div className="page-tools"><div><h2>Seus torneios</h2><p>Crie, acompanhe e encerre competições</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newTournament" })}>＋ Novo torneio</button>}</div>
-    {rows.length ? <div className="tournament-grid">{rows.map(item => <article className={item.id === active?.id ? "tournament-card featured" : "tournament-card"} key={item.id}><div className="trophy">🏆</div><span className={`status ${item.status === "em_andamento" ? "proxima" : "agendada"}`}>{item.status.replaceAll("_"," ").toUpperCase()}</span><h2>{item.name}</h2><p>{item.category || "Categoria não informada"} · {item.venue || "Local a definir"}</p><div className="tournament-numbers"><span><b>{item.starts_on ? new Date(`${item.starts_on}T12:00`).toLocaleDateString("pt-BR") : "—"}</b> início</span><span><b>{item.ends_on ? new Date(`${item.ends_on}T12:00`).toLocaleDateString("pt-BR") : "—"}</b> término</span></div><div className="tournament-actions"><button onClick={() => setPage("dashboard")}>Abrir torneio</button>{canManage && <button onClick={() => onPublish(item.id)}>{item.status === "em_andamento" ? "Copiar link público" : "Publicar resultados"}</button>}</div></article>)}</div> : <div className="inline-empty">Nenhum torneio criado.</div>}</>;
+    {rows.length ? <div className="tournament-grid">{rows.map(item => <article className={item.id === active?.id ? "tournament-card featured" : "tournament-card"} key={item.id}><div className="trophy">🏆</div><span className={`status ${item.status === "em_andamento" ? "proxima" : "agendada"}`}>{item.status.replaceAll("_"," ").toUpperCase()}</span><h2>{item.name}</h2><p>{item.category || "Categoria não informada"} · {item.venue || "Local a definir"}</p><div className="tournament-numbers"><span><b>{item.starts_on ? new Date(`${item.starts_on}T12:00`).toLocaleDateString("pt-BR") : "—"}</b> início</span><span><b>{item.ends_on ? new Date(`${item.ends_on}T12:00`).toLocaleDateString("pt-BR") : "—"}</b> término</span></div><div className="tournament-actions"><button onClick={() => setPage("dashboard")}>Abrir torneio</button>{canManage && <button onClick={() => onPublish(item.id)}>{item.status === "em_andamento" ? "Copiar link público" : "Publicar resultados"}</button>}{canDelete && <button className="delete-record" onClick={() => onDelete(item)}>Excluir</button>}</div></article>)}</div> : <div className="inline-empty">Nenhum torneio criado.</div>}</>;
 }
 
-function Players({ rows, setModal, canManage }) {
+function Players({ rows, setModal, canManage, canDelete, onDelete }) {
   return <section className="panel full-panel"><div className="page-tools"><div><h2>Jogadores</h2><p>{rows.length} atletas cadastrados</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newPlayer" })}>＋ Novo jogador</button>}</div>
-    <div className="table-wrap"><table><thead><tr><th>Atleta</th><th>Equipe</th><th>Número</th><th>Categoria</th><th>Status</th></tr></thead><tbody>{rows.map(player=><tr key={player.id}><td><div className="person"><span>{player.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><strong>{player.full_name}</strong></div></td><td>{player.team?.name}</td><td>{player.shirt_number ? `#${String(player.shirt_number).padStart(2,"0")}` : "—"}</td><td>{player.category || "—"}</td><td><span className={player.active ? "status encerrada" : "status agendada"}>{player.active ? "✓ Apto" : "Inativo"}</span></td></tr>)}</tbody></table></div></section>;
+    <div className="table-wrap"><table><thead><tr><th>Atleta</th><th>Equipe</th><th>Número</th><th>Categoria</th><th>Status</th>{canDelete && <th>Ações</th>}</tr></thead><tbody>{rows.map(player=><tr key={player.id}><td><div className="person"><span>{player.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><strong>{player.full_name}</strong></div></td><td>{player.team?.name}</td><td>{player.shirt_number ? `#${String(player.shirt_number).padStart(2,"0")}` : "—"}</td><td>{player.category || "—"}</td><td><span className={player.active ? "status encerrada" : "status agendada"}>{player.active ? "✓ Apto" : "Inativo"}</span></td>{canDelete && <td><button className="delete-record" onClick={() => onDelete(player)}>Excluir</button></td>}</tr>)}</tbody></table></div></section>;
 }
 
 function Reports({ matches, audit, setModal }) {
