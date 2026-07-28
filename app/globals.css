@@ -43,3 +43,16 @@
 .delete-record:hover{background:#fde7e7!important}
 .team-meta>div{display:flex;gap:6px;align-items:center}
 .tournament-card.featured .delete-record{border-color:#ffb6aa!important;background:#ffffff18!important;color:#ffd1c8!important}
+.user-row{grid-template-columns:38px minmax(180px,1fr) minmax(160px,auto) 70px 145px}
+.role-list{display:flex;flex-wrap:wrap;gap:5px}
+.user-actions{display:flex;justify-content:flex-end;gap:5px}
+.edit-roles{border:1px solid #cfdde4!important;background:#f5fafc!important;color:#315f72;border-radius:7px!important;padding:6px 8px;font-size:10px;font-weight:700}
+.role-checkboxes{display:grid;gap:8px;margin-top:14px}
+.role-checkboxes label{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:10px;padding:11px!important;margin:0!important;cursor:pointer}
+.role-checkboxes label:has(input:checked){border-color:var(--orange);background:#fff7f4}
+.role-checkboxes input{width:17px!important;height:17px;margin:0!important;accent-color:var(--orange);box-shadow:none!important}
+.role-checkboxes span,.role-checkboxes strong,.role-checkboxes small{display:block}
+.role-checkboxes small{color:var(--muted);font-weight:400;margin-top:2px}
+.role-checkboxes.compact{grid-template-columns:1fr 1fr}
+.field-title{font-weight:700;font-size:11px;margin-top:15px}
+@media(max-width:760px){.user-row{grid-template-columns:38px 1fr}.user-row .role-list,.user-row .online,.user-row .user-actions,.user-row .protected-user{grid-column:2}.user-actions{justify-content:flex-start}.role-checkboxes.compact{grid-template-columns:1fr}}
