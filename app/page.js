@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
-  claimInvitation, createInvitation, getCurrentContext, getGroups, getInvitations,
+  claimInvitation, createInvitation, deleteOrganizationUser, getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore
 } from "../lib/supabase/data";
@@ -187,6 +187,17 @@ export default function App() {
       notify("Não foi possível publicar o torneio.");
     }
   };
+  const deleteUser = async membership => {
+    const name = membership.profile?.full_name || membership.profile?.email || "este usuário";
+    if (!window.confirm(`Excluir o acesso de ${name}?\n\nEssa pessoa não poderá mais entrar no sistema.`)) return;
+    try {
+      await deleteOrganizationUser(context.organization.id, membership.id, session.user.id);
+      await refreshWorkspace(context.organization.id, activeTournament?.id);
+      notify("Usuário excluído com sucesso");
+    } catch (error) {
+      notify(error.message || "Não foi possível excluir o usuário.");
+    }
+  };
   const notify = text => { setToast(text); setTimeout(() => setToast(""), 2600); };
   const title = menu.find(x => x[0] === page)?.[1] || "Visão geral";
   const roleKey = context?.role;
@@ -254,7 +265,7 @@ export default function App() {
           {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} />}
           {page === "reports" && <Reports matches={matches} audit={auditRows} setModal={setModal} notify={notify} />}
           {page === "regulations" && <Regulations />}
-          {page === "users" && roleKey === "admin" && <Users rows={userRows} invitations={invitationRows} setModal={setModal} />}
+          {page === "users" && roleKey === "admin" && <Users rows={userRows} invitations={invitationRows} setModal={setModal} onDelete={deleteUser} currentUserId={session.user.id} />}
         </div>
       </main>
       {modal && <Modal data={modal} close={() => setModal(null)} saveScore={saveScore} saveRecord={saveRecord} teams={teamRows} players={playerRows} notify={notify} setRole={setRole} />}
@@ -542,10 +553,10 @@ function Reports({ matches, audit, setModal }) {
   </>;
 }
 
-function Users({ rows, invitations, setModal }) {
+function Users({ rows, invitations, setModal, onDelete, currentUserId }) {
   const descriptions={admin:"Acesso total",professor:"Equipes e atletas",treinador:"Cadastra jogadores e visualiza o sistema",arbitro:"Partidas atribuídas",visualizador:"Somente resultados"};
   return <section className="panel full-panel"><div className="page-tools"><div><h2>Usuários e permissões</h2><p>{rows.length} usuários ativos na CoordEDF</p></div><button className="primary-btn" onClick={() => setModal({ type: "newUser" })}>＋ Convidar usuário</button></div>
-    <div className="user-list">{rows.map((item,i)=>{const name=item.profile?.full_name || item.profile?.email || "Usuário"; const initials=name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); return <div className="user-row" key={item.id}><span className={`person-avatar c${i%3}`}>{initials}</span><div><strong>{name}</strong><small>{item.profile?.email} · {descriptions[item.role]}</small></div><span className={`role role${i%3}`}>{roleLabel(item.role)}</span><span className="online">● {item.active ? "Ativo" : "Inativo"}</span><button>•••</button></div>})}</div>
+    <div className="user-list">{rows.map((item,i)=>{const name=item.profile?.full_name || item.profile?.email || "Usuário"; const initials=name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); const isCurrentUser=item.user_id===currentUserId; return <div className="user-row" key={item.id}><span className={`person-avatar c${i%3}`}>{initials}</span><div><strong>{name}{isCurrentUser && <em className="current-user">Você</em>}</strong><small>{item.profile?.email} · {descriptions[item.role]}</small></div><span className={`role role${i%3}`}>{roleLabel(item.role)}</span><span className="online">● {item.active ? "Ativo" : "Inativo"}</span>{isCurrentUser ? <span className="protected-user" title="Seu próprio acesso está protegido">Protegido</span> : <button className="delete-user" onClick={()=>onDelete(item)} aria-label={`Excluir usuário ${name}`}>Excluir</button>}</div>})}</div>
     {!!invitations.filter(invite=>!invite.accepted_at).length && <div className="pending-invites"><h3>Convites pendentes</h3>{invitations.filter(invite=>!invite.accepted_at).map(invite=><div key={invite.id}><span>✉</span><div><strong>{invite.email}</strong><small>{roleLabel(invite.role)} · válido até {new Date(invite.expires_at).toLocaleDateString("pt-BR")}</small></div><button onClick={()=>navigator.clipboard.writeText(`${window.location.origin}/?invite=${invite.token}`)}>Copiar link</button></div>)}</div>}
     <div className="security-note"><span>🔒</span><div><strong>Acesso protegido pelo Supabase</strong><p>Cada pessoa cria a própria senha e recebe somente as permissões do perfil escolhido.</p></div></div>
   </section>;
