@@ -662,7 +662,7 @@ function Tournaments({ rows, active, onPublish, setPage, setModal, canManage, ca
 
 function Players({ rows, setModal, canManage, canDelete, onDelete }) {
   return <section className="panel full-panel"><div className="page-tools"><div><h2>Jogadores</h2><p>{rows.length} atletas cadastrados</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newPlayer" })}>＋ Novo jogador</button>}</div>
-    <div className="table-wrap"><table><thead><tr><th>Atleta</th><th>Equipe</th><th>Número</th><th>Categoria</th><th>Status</th>{canDelete && <th>Ações</th>}</tr></thead><tbody>{rows.map(player=><tr key={player.id}><td><div className="person"><span>{player.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><strong>{player.full_name}</strong></div></td><td>{player.team?.name}</td><td>{player.shirt_number ? `#${String(player.shirt_number).padStart(2,"0")}` : "—"}</td><td>{player.category || "—"}</td><td><span className={player.active ? "status encerrada" : "status agendada"}>{player.active ? "✓ Apto" : "Inativo"}</span></td>{canDelete && <td><button className="delete-record" onClick={() => onDelete(player)}>Excluir</button></td>}</tr>)}</tbody></table></div></section>;
+    <div className="table-wrap"><table><thead><tr><th>Atleta</th><th>Equipe</th><th>Nascimento</th><th>Número</th><th>Categoria</th><th>Status</th>{canDelete && <th>Ações</th>}</tr></thead><tbody>{rows.map(player=><tr key={player.id}><td><div className="person"><span>{player.full_name.split(" ").map(x=>x[0]).join("").slice(0,2)}</span><strong>{player.full_name}</strong></div></td><td>{player.team?.name}</td><td>{player.birth_date ? new Date(`${player.birth_date}T12:00:00`).toLocaleDateString("pt-BR") : "—"}</td><td>{player.shirt_number ? `#${String(player.shirt_number).padStart(2,"0")}` : "—"}</td><td>{player.category || "—"}</td><td><span className={player.active ? "status encerrada" : "status agendada"}>{player.active ? "✓ Apto" : "Inativo"}</span></td>{canDelete && <td><button className="delete-record" onClick={() => onDelete(player)}>Excluir</button></td>}</tr>)}</tbody></table></div></section>;
 }
 
 function Reports({ matches, audit, setModal }) {
@@ -812,6 +812,7 @@ function RecordModal({ type, teams, close, saveRecord }) {
     {type === "newPlayer" && <>
       <label>Nome completo<input name="full_name" required placeholder="Nome do atleta" autoFocus /></label>
       <label>Equipe<select name="team_id" required defaultValue=""><option value="" disabled>Selecione a equipe</option>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+      <label>Data de nascimento<input name="birth_date" type="date" required max={new Date().toISOString().split("T")[0]} /></label>
       <div className="form-grid"><label>Número<input name="shirt_number" type="number" min="0" /></label><label>Categoria<input name="category" placeholder="Ex.: Sub-15" /></label></div>
     </>}
     {type === "newMatch" && <>
