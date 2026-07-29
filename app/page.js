@@ -846,10 +846,24 @@ function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlay
   return <RecordModal type={data.type} data={data} teams={teams} close={close} saveRecord={saveRecord} />;
 }
 
-function MatchReport({ match, number, close }) {
-  const TeamSheet = ({ name, color, burned }) => <section className="sheet-team">
+function MatchReport({ match, number, players, close }) {
+  const rosterFor = teamId => {
+    const registered = players
+      .filter(player => player.team_id === teamId && player.active !== false)
+      .sort((a,b) => a.full_name.localeCompare(b.full_name, "pt-BR"))
+      .slice(0,22);
+    return Array.from({length:22}, (_,index) => registered[index] || null);
+  };
+  const TeamSheet = ({ name, color, burned, roster }) => <section className="sheet-team">
     <div className="sheet-team-title"><b>{name}</b><span>COR DO COLETE: <i style={{background:color}} /> __________________</span></div>
     <div className="sheet-school">ESCOLA / EQUIPE: <strong>{name}</strong></div>
+    <div className="sheet-roster">
+      <strong>ATLETAS INSCRITOS</strong>
+      <div className="sheet-roster-list">{roster.map((player,index) => <div key={player?.id || `empty-${index}`}>
+        <b>{String(index+1).padStart(2,"0")}.</b>
+        <span>{player?.full_name || "________________________________"}</span>
+      </div>)}</div>
+    </div>
     <div className="burned-control">
       <strong>CONTROLE DE JOGADORES QUEIMADOS</strong>
       <p>Risque um quadrado para cada jogador queimado.</p>
@@ -861,7 +875,7 @@ function MatchReport({ match, number, close }) {
     <button className="modal-close no-print" onClick={close}>×</button>
     <header className="official-sheet-header"><div className="sheet-logo">Coord<span>EDF</span></div><div><h1>SÚMULA QUEIMADA 2026</h1><p>{match.round.toUpperCase()}</p></div><div className="sheet-game">JOGO Nº <b>{String(number).padStart(3,"0")}</b></div></header>
     <div className="sheet-meta"><span>DATA: ____/____/2026</span><span>HORÁRIO: {match.time}</span><span>LOCAL: {match.court}</span><span>PLACAR: {match.sa ?? "___"} × {match.sb ?? "___"}</span></div>
-    <div className="sheet-teams"><TeamSheet name={match.a} color={match.ca} burned={match.burnedA}/><TeamSheet name={match.b} color={match.cb} burned={match.burnedB}/></div>
+    <div className="sheet-teams"><TeamSheet name={match.a} color={match.ca} burned={match.burnedA} roster={rosterFor(match.homeTeamId)}/><TeamSheet name={match.b} color={match.cb} burned={match.burnedB} roster={rosterFor(match.awayTeamId)}/></div>
     <section className="sheet-observations"><b>OBSERVAÇÕES / OCORRÊNCIAS:</b><span></span><span></span><span></span></section>
     <section className="sheet-signatures"><div>Árbitro responsável</div><div>Responsável — {match.a}</div><div>Responsável — {match.b}</div></section>
     <footer>17º Torneio de Queimada · CoordEDF · Documento oficial gerado pelo QueimaFácil</footer>
