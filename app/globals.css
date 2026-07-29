@@ -52,6 +52,7 @@
 .role-checkboxes label{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:10px;padding:11px!important;margin:0!important;cursor:pointer}
 .role-checkboxes label:has(input:checked){border-color:var(--orange);background:#fff7f4}
 .role-checkboxes input{width:17px!important;height:17px;margin:0!important;accent-color:var(--orange);box-shadow:none!important}
+.modal input.readonly-field{background:#f3f5f6;color:#596770;cursor:not-allowed}
 .role-checkboxes span,.role-checkboxes strong,.role-checkboxes small{display:block}
 .role-checkboxes small{color:var(--muted);font-weight:400;margin-top:2px}
 .role-checkboxes.compact{grid-template-columns:1fr 1fr}

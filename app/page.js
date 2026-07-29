@@ -804,7 +804,8 @@ function UserRolesModal({ membership, close, save }) {
   const toggle = role => setSelected(current => current.includes(role) ? current.filter(item => item !== role) : [...current, role]);
   return <div className="modal-wrap"><div className="modal small">
     <button className="modal-close" onClick={close}>×</button>
-    <span className="eyebrow">EDITAR USUÁRIO</span><h2>{name}</h2><p>Atualize o nome e as funções que essa pessoa exercerá no evento.</p>
+    <span className="eyebrow">EDITAR USUÁRIO</span><h2>{name}</h2><p>Confira os dados cadastrados e atualize o nome ou as funções dessa pessoa.</p>
+    <label>E-mail cadastrado<input value={membership.profile?.email || ""} readOnly className="readonly-field" /></label>
     <label>Nome completo<input value={fullName} onChange={event=>setFullName(event.target.value)} required autoFocus placeholder="Nome do usuário" /></label>
     <div className="role-checkboxes">{selectableRoles.map(([value,label,description])=><label key={value}><input type="checkbox" checked={selected.includes(value)} onChange={()=>toggle(value)} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div>
     <div className="modal-actions"><button onClick={close}>Cancelar</button><button className="primary-btn" disabled={!selected.length || !fullName.trim()} onClick={()=>save(membership,selected,fullName.trim())}>Salvar usuário</button></div>
