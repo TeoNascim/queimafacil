@@ -8,7 +8,7 @@ import {
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
-  updateOrganizationUserRoles, updatePlayer, updateMatch
+  updateOrganizationUserRoles, updatePlayer, updateMatch, updateTeam
 } from "../lib/supabase/data";
 
 const icons = {
@@ -179,6 +179,7 @@ export default function App() {
         }
         if (!activeTournament) throw new Error("Crie um torneio primeiro.");
         if (type === "newTeam") await createTeam(activeTournament.id, values);
+        if (type === "editTeam") await updateTeam(values.id, values);
         if (type === "newGroup") await createGroup(activeTournament.id, values);
         if (type === "newPlayer") await createPlayer(values);
         if (type === "newMatch") await createMatch(activeTournament.id, values);
@@ -671,7 +672,7 @@ function Matches({ matches, setModal, canManage, canScore, canEdit }) {
 
 function Teams({ rows, players, setModal, canManage, canDelete, onDelete }) {
   return <><div className="page-tools"><div><h2>Equipes inscritas</h2><p>{rows.length} equipes cadastradas no torneio</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newTeam" })}>＋ Nova equipe</button>}</div>
-    {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
+    {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button onClick={()=>setModal({type:"editTeam",team:t})}>Editar</button>}{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
 }
 
 function Groups({ rows, teams, setModal, onAssign, canManage }) {
@@ -843,12 +844,13 @@ function RegulationTopic({ title, children }) {
 }
 
 function RecordModal({ type, data, teams, close, saveRecord }) {
-  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", editMatch: "Editar partida", newUser: "Criar usuário e senha" };
+  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", editTeam: "Editar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", editMatch: "Editar partida", newUser: "Criar usuário e senha" };
   const submit = event => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const values = Object.fromEntries(formData.entries());
     if (type === "editMatch") values.id = data.match.id;
+    if (type === "editTeam") values.id = data.team.id;
     if ((type === "newMatch" || type === "editMatch") && values.home_team_id === values.away_team_id) {
       const awayField = event.currentTarget.elements.away_team_id;
       awayField.setCustomValidity("Selecione uma equipe diferente da Equipe A.");
@@ -861,16 +863,16 @@ function RecordModal({ type, data, teams, close, saveRecord }) {
   };
   return <div className="modal-wrap"><form className="modal" onSubmit={submit}>
     <button type="button" className="modal-close" onClick={close}>×</button>
-    <span className="eyebrow">{type === "editMatch" ? "ALTERAR PARTIDA" : "NOVO REGISTRO"}</span><h2>{titles[type] || "Novo cadastro"}</h2><p>Os dados serão armazenados no Supabase.</p>
+    <span className="eyebrow">{type.startsWith("edit") ? "ALTERAR CADASTRO" : "NOVO REGISTRO"}</span><h2>{titles[type] || "Novo cadastro"}</h2><p>Os dados serão armazenados no Supabase.</p>
     {type === "newTournament" && <>
       <label>Nome do torneio<input name="name" required placeholder="Ex.: Interclasses 2026" autoFocus /></label>
       <div className="form-grid"><label>Categoria<input name="category" placeholder="Ex.: Ensino Médio" /></label><label>Local<input name="venue" placeholder="Ex.: Ginásio principal" /></label></div>
       <div className="form-grid"><label>Data inicial<input name="starts_on" type="date" /></label><label>Data final<input name="ends_on" type="date" /></label></div>
     </>}
-    {type === "newTeam" && <>
-      <label>Nome da equipe<input name="name" required placeholder="Ex.: Falcões" autoFocus /></label>
-      <div className="form-grid"><label>Sigla<input name="short_name" maxLength="4" placeholder="FAL" /></label><label>Cor<input name="color" type="color" defaultValue="#ff6945" /></label></div>
-      <label>Professor responsável<input name="coach_name" placeholder="Nome do professor" /></label>
+    {(type === "newTeam" || type === "editTeam") && <>
+      <label>Nome da equipe<input name="name" required placeholder="Ex.: Falcões" autoFocus defaultValue={data?.team?.name||""} /></label>
+      <div className="form-grid"><label>Sigla<input name="short_name" maxLength="4" placeholder="FAL" defaultValue={data?.team?.short_name||""} /></label><label>Cor<input name="color" type="color" defaultValue={data?.team?.color||"#ff6945"} /></label></div>
+      <label>Professor responsável<input name="coach_name" placeholder="Nome do professor" defaultValue={data?.team?.coach_name||""} /></label>
     </>}
     {type === "newGroup" && <>
       <label>Nome do grupo<input name="name" required placeholder="Ex.: Grupo A" autoFocus /></label>
