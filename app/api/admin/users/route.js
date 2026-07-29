@@ -3,6 +3,50 @@ import { createAdminClient, getAuthenticatedUser } from "../../../../lib/supabas
 
 const allowedRoles = ["admin", "professor", "treinador", "arbitro", "visualizador"];
 
+export async function GET(request) {
+  try {
+    const admin = createAdminClient();
+    const caller = await getAuthenticatedUser(admin, request);
+    if (!caller) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+
+    const organizationId = new URL(request.url).searchParams.get("organization_id") || "";
+    const { data: callerMembership, error: callerError } = await admin
+      .from("memberships")
+      .select("role, roles")
+      .eq("organization_id", organizationId)
+      .eq("user_id", caller.id)
+      .eq("active", true)
+      .maybeSingle();
+    const callerRoles = callerMembership?.roles?.length ? callerMembership.roles : [callerMembership?.role].filter(Boolean);
+    if (callerError || !callerRoles.includes("admin")) {
+      return NextResponse.json({ error: "Somente administradores podem consultar usuários." }, { status: 403 });
+    }
+
+    const { data: memberships, error } = await admin
+      .from("memberships")
+      .select("id, user_id, role, roles, active, profile:profiles(id, full_name, email)")
+      .eq("organization_id", organizationId)
+      .order("created_at");
+    if (error) throw error;
+
+    const users = await Promise.all((memberships || []).map(async membership => {
+      const { data } = await admin.auth.admin.getUserById(membership.user_id);
+      const authUser = data?.user;
+      return {
+        ...membership,
+        profile: {
+          id: membership.profile?.id || membership.user_id,
+          full_name: membership.profile?.full_name || authUser?.user_metadata?.full_name || "",
+          email: membership.profile?.email || authUser?.email || ""
+        }
+      };
+    }));
+    return NextResponse.json({ users });
+  } catch (error) {
+    return NextResponse.json({ error: error.message || "Erro interno ao consultar usuários." }, { status: 500 });
+  }
+}
+
 export async function POST(request) {
   try {
     const admin = createAdminClient();

@@ -129,9 +129,16 @@ export default function App() {
       setMatches([]); setTeamRows([]); setPlayerRows([]); setGroupRows([]); setRefereeRows([]);
       return;
     }
+    const loadUsers = async () => {
+      const response = await fetch(`/api/admin/users?organization_id=${encodeURIComponent(organizationId)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      });
+      if (response.ok) return (await response.json()).users;
+      return getOrganizationUsers(organizationId);
+    };
     const [dbMatches, dbTeams, dbPlayers, dbGroups, dbUsers, dbInvitations, dbAudit, dbReferees] = await Promise.all([
       getTournamentMatches(selected.id), getTeams(selected.id), getPlayers(selected.id), getGroups(selected.id),
-      getOrganizationUsers(organizationId), getInvitations(organizationId), getAuditLog(organizationId), getMatchReferees(selected.id)
+      loadUsers(), getInvitations(organizationId), getAuditLog(organizationId), getMatchReferees(selected.id)
     ]);
     setMatches(dbMatches.map(mapMatch));
     setTeamRows(dbTeams);
