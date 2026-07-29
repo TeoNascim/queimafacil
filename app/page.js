@@ -8,7 +8,7 @@ import {
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
-  updateOrganizationUserRoles, updatePlayer
+  updateOrganizationUserRoles, updatePlayer, updateMatch
 } from "../lib/supabase/data";
 
 const icons = {
@@ -182,6 +182,7 @@ export default function App() {
         if (type === "newGroup") await createGroup(activeTournament.id, values);
         if (type === "newPlayer") await createPlayer(values);
         if (type === "newMatch") await createMatch(activeTournament.id, values);
+        if (type === "editMatch") await updateMatch(values.id, values);
         await refreshWorkspace(context.organization.id, activeTournament.id);
       }
       setModal(null); notify("Registro salvo no Supabase");
@@ -317,7 +318,7 @@ export default function App() {
 
         <div className="content">
           {page === "dashboard" && (activeTournament ? <Dashboard matches={matches} teams={teamRows} players={playerRows} classification={classification} setPage={setPage} setModal={setModal} canScore={canScore} canManage={canManage} /> : <Onboarding setModal={setModal} canManage={canManage} />)}
-          {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} />}
+          {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} canEdit={hasRole("admin")} />}
           {page === "standings" && <Standings full rows={classification} />}
           {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
           {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} />}
@@ -352,7 +353,9 @@ function mapMatch(match) {
     ca: match.home_team?.color || "#ff6945",
     cb: match.away_team?.color || "#6547d9",
     homeTeamId: match.home_team_id,
-    awayTeamId: match.away_team_id
+    awayTeamId: match.away_team_id,
+    phase: match.phase || "Fase de grupos",
+    scheduledAt: when ? new Date(when.getTime() - when.getTimezoneOffset() * 60000).toISOString().slice(0,16) : ""
   };
 }
 
@@ -613,7 +616,7 @@ function Stat({ icon, label, value, note, tone, progress }) {
   </div>;
 }
 
-function MatchCard({ match, onScore, canScore = false }) {
+function MatchCard({ match, onScore, onEdit, canScore = false, canEdit = false }) {
   return <article className="match-card">
     <div className="match-top"><span className={`status ${match.status.toLowerCase()}`}>{match.status === "Encerrada" ? "✓ " : ""}{match.status}</span><span>{match.time} · {match.court}</span><button>•••</button></div>
     <div className="round">{match.round}</div>
@@ -621,6 +624,7 @@ function MatchCard({ match, onScore, canScore = false }) {
       <TeamMark name={match.a} color={match.ca} /><div className="score">{match.sa ?? "–"} <small>×</small> {match.sb ?? "–"}</div><TeamMark name={match.b} color={match.cb} />
     </div>
     <div className="match-actions">
+      {canEdit && <button onClick={onEdit}>Editar partida</button>}
       {match.status === "Encerrada" ? <>{canScore && <button onClick={onScore}>Editar placar</button>}</> : canScore && <button className={match.status === "Próxima" ? "primary" : ""} onClick={onScore}>{match.status === "Próxima" ? "Inserir placar" : "Ver detalhes"}</button>}
     </div>
   </article>;
@@ -644,10 +648,10 @@ function Activity({ icon, tone, title, text, time }) {
   return <div className="activity"><span className={tone}>{icon}</span><div><strong>{title}</strong><p>{text}</p><small>{time}</small></div></div>;
 }
 
-function Matches({ matches, setModal, canManage, canScore }) {
+function Matches({ matches, setModal, canManage, canScore, canEdit }) {
   return <section className="panel full-panel">
     <div className="page-tools"><div><h2>Tabela de partidas</h2><p>Organize horários, quadras e resultados</p></div><div className="tool-actions"><select><option>Todas as rodadas</option><option>Rodada 3</option></select>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newMatch" })}>＋ Nova partida</button>}</div></div>
-    <div className="match-list">{matches.map(m => <MatchCard key={m.id} match={m} onScore={() => setModal({ type: "score", match: m })} canScore={canScore} />)}</div>
+    <div className="match-list">{matches.map(m => <MatchCard key={m.id} match={m} onScore={() => setModal({ type: "score", match: m })} onEdit={() => setModal({ type: "editMatch", match: m })} canScore={canScore} canEdit={canEdit} />)}</div>
   </section>;
 }
 
@@ -749,7 +753,7 @@ function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlay
   if (data.type === "teamDetails") return <TeamDetailsModal team={data.team} players={players.filter(player=>player.team_id===data.team.id)} canEdit={data.canEdit} close={close} savePlayer={saveTeamPlayer} deletePlayer={deletePlayerRecord} />;
   if (data.type === "userRoles") return <UserRolesModal membership={data.membership} close={close} save={saveUserRoles} />;
   if (data.type === "profile") return <div className="modal-wrap"><div className="modal small"><button className="modal-close" onClick={close}>×</button><span className="eyebrow">CONTA CONECTADA</span><h2>Perfil de acesso</h2><p>{data.email}</p><div className="role-options">{["Administrador","Professor","Treinador","Árbitro","Visualizador"].map(r=><button key={r} onClick={()=>{setRole(r);close();notify(`Visualização alterada para ${r}`)}}>{r}<span>→</span></button>)}</div><button className="signout-button" onClick={() => createClient().auth.signOut()}>Sair do sistema</button></div></div>;
-  return <RecordModal type={data.type} teams={teams} close={close} saveRecord={saveRecord} />;
+  return <RecordModal type={data.type} data={data} teams={teams} close={close} saveRecord={saveRecord} />;
 }
 
 function MatchReport({ match, number, close }) {
@@ -824,19 +828,26 @@ function RegulationTopic({ title, children }) {
   return <div className="regulation-topic"><h4>{title}</h4>{children}</div>;
 }
 
-function RecordModal({ type, teams, close, saveRecord }) {
-  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", newUser: "Criar usuário e senha" };
+function RecordModal({ type, data, teams, close, saveRecord }) {
+  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", editMatch: "Editar partida", newUser: "Criar usuário e senha" };
   const submit = event => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const values = Object.fromEntries(formData.entries());
+    if (type === "editMatch") values.id = data.match.id;
+    if ((type === "newMatch" || type === "editMatch") && values.home_team_id === values.away_team_id) {
+      const awayField = event.currentTarget.elements.away_team_id;
+      awayField.setCustomValidity("Selecione uma equipe diferente da Equipe A.");
+      awayField.reportValidity();
+      return;
+    }
     if (type === "newUser") values.roles = formData.getAll("roles");
     if (type === "newUser" && !values.roles.length) return;
     saveRecord(type, values);
   };
   return <div className="modal-wrap"><form className="modal" onSubmit={submit}>
     <button type="button" className="modal-close" onClick={close}>×</button>
-    <span className="eyebrow">NOVO REGISTRO</span><h2>{titles[type] || "Novo cadastro"}</h2><p>Os dados serão armazenados no Supabase.</p>
+    <span className="eyebrow">{type === "editMatch" ? "ALTERAR PARTIDA" : "NOVO REGISTRO"}</span><h2>{titles[type] || "Novo cadastro"}</h2><p>Os dados serão armazenados no Supabase.</p>
     {type === "newTournament" && <>
       <label>Nome do torneio<input name="name" required placeholder="Ex.: Interclasses 2026" autoFocus /></label>
       <div className="form-grid"><label>Categoria<input name="category" placeholder="Ex.: Ensino Médio" /></label><label>Local<input name="venue" placeholder="Ex.: Ginásio principal" /></label></div>
@@ -857,10 +868,10 @@ function RecordModal({ type, teams, close, saveRecord }) {
       <label>Data de nascimento<input name="birth_date" type="date" required max={new Date().toISOString().split("T")[0]} /></label>
       <div className="form-grid"><label>Número<input name="shirt_number" type="number" min="0" /></label><label>Categoria<input name="category" placeholder="Ex.: Sub-15" /></label></div>
     </>}
-    {type === "newMatch" && <>
-      <div className="form-grid"><label>Equipe A<select name="home_team_id" required defaultValue=""><option value="" disabled>Selecione</option>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><label>Equipe B<select name="away_team_id" required defaultValue=""><option value="" disabled>Selecione</option>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label></div>
-      <label>Fase<input name="phase" defaultValue="Fase de grupos" /></label>
-      <div className="form-grid"><label>Data e horário<input name="scheduled_at" type="datetime-local" /></label><label>Quadra<input name="court" placeholder="Quadra A" /></label></div>
+    {(type === "newMatch" || type === "editMatch") && <>
+      <div className="form-grid"><label>Equipe A<select name="home_team_id" required defaultValue={data?.match?.homeTeamId||""}><option value="" disabled>Selecione</option>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label><label>Equipe B<select name="away_team_id" required defaultValue={data?.match?.awayTeamId||""} onChange={event=>event.currentTarget.setCustomValidity("")}><option value="" disabled>Selecione</option>{teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label></div>
+      <label>Fase<input name="phase" defaultValue={data?.match?.phase||"Fase de grupos"} /></label>
+      <div className="form-grid"><label>Data e horário<input name="scheduled_at" type="datetime-local" defaultValue={data?.match?.scheduledAt||""} /></label><label>Quadra<input name="court" placeholder="Quadra A" defaultValue={data?.match?.court?.includes("a definir")?"":data?.match?.court||""} /></label></div>
     </>}
     {type === "newUser" && <><label>Nome completo<input name="full_name" required placeholder="Nome do usuário" autoFocus /></label><label>E-mail do usuário<input name="email" type="email" required placeholder="pessoa@escola.com.br" /></label><label>Senha temporária<input name="password" type="text" minLength="8" required placeholder="Mínimo de 8 caracteres" autoComplete="off" /></label><div className="field-title">Funções no evento</div><div className="role-checkboxes compact">{selectableRoles.map(([value,label,description])=><label key={value}><input name="roles" value={value} type="checkbox" defaultChecked={value==="visualizador"} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div><div className="security-note"><span>🔑</span><div><strong>Primeiro acesso simplificado</strong><p>Informe o e-mail e a senha temporária à pessoa. Nenhuma confirmação por e-mail será necessária, e o sistema exigirá uma nova senha no primeiro login.</p></div></div></>}
     <div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button className="primary-btn">Salvar no Supabase</button></div>
