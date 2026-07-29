@@ -320,7 +320,7 @@ export default function App() {
         <div className="content">
           {page === "dashboard" && (activeTournament ? <Dashboard matches={matches} teams={teamRows} players={playerRows} classification={classification} setPage={setPage} setModal={setModal} canScore={canScore} canManage={canManage} /> : <Onboarding setModal={setModal} canManage={canManage} />)}
           {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} canEdit={hasRole("admin")} />}
-          {page === "standings" && <Standings full rows={classification} />}
+          {page === "standings" && <Standings full rows={classification} teams={teamRows} matches={matches} groups={groupRows} />}
           {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
           {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} />}
           {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("tournament", item)} />}
@@ -638,13 +638,15 @@ function TeamMark({ name, color }) {
   return <div className="team-mark"><span style={{ background: color }}>{name.slice(0, 2).toUpperCase()}</span><strong>{name}</strong></div>;
 }
 
-function Standings({ full = false, rows = [] }) {
+function Standings({ full = false, rows = [], teams = [], matches = [], groups = [] }) {
+  const [groupFilter,setGroupFilter]=useState("");
+  const displayedRows=groupFilter ? buildStandings(teams.filter(team=>team.group_id===groupFilter),matches) : rows;
   return <div className={full ? "panel full-panel" : ""}>
-    {full && <div className="page-tools"><div><h2>Classificação geral</h2><p>Desempate: confronto direto (2 equipes), queimados a favor e queimados contra</p></div><select><option>Todos os grupos</option><option>Grupo A</option><option>Grupo B</option></select></div>}
+    {full && <div className="page-tools"><div><h2>{groupFilter ? `Classificação — ${groups.find(group=>group.id===groupFilter)?.name||"Grupo"}` : "Classificação geral"}</h2><p>Desempate: confronto direto (2 equipes), queimados a favor e queimados contra</p></div><select value={groupFilter} onChange={event=>setGroupFilter(event.target.value)} aria-label="Filtrar classificação por grupo"><option value="">Classificação geral</option>{groups.map(group=><option key={group.id} value={group.id}>{group.name}</option>)}</select></div>}
     <div className="table-wrap"><table><thead><tr><th>#</th><th>Equipe</th><th>PTS</th><th>J</th><th>V</th><th>D</th><th>QF</th><th>QC</th></tr></thead>
-      <tbody>{rows.map(r => <tr key={r.team}><td><span className={r.p <= 2 ? "rank top" : "rank"}>{r.p}</span></td><td><div className="table-team"><span style={{ background: r.color }}>{r.tag}</span><strong>{r.team}</strong></div></td><td><b>{r.pts}</b></td><td>{r.j}</td><td>{r.v}</td><td>{r.d}</td><td>{r.burnedFor}</td><td>{r.burnedAgainst}</td></tr>)}</tbody>
+      <tbody>{displayedRows.map(r => <tr key={r.team}><td><span className={r.p <= 2 ? "rank top" : "rank"}>{r.p}</span></td><td><div className="table-team"><span style={{ background: r.color }}>{r.tag}</span><strong>{r.team}</strong></div></td><td><b>{r.pts}</b></td><td>{r.j}</td><td>{r.v}</td><td>{r.d}</td><td>{r.burnedFor}</td><td>{r.burnedAgainst}</td></tr>)}</tbody>
     </table></div>
-    {!rows.length && <div className="inline-empty">Cadastre equipes para iniciar a classificação.</div>}
+    {!displayedRows.length && <div className="inline-empty">{groupFilter ? "Nenhuma equipe cadastrada neste grupo." : "Cadastre equipes para iniciar a classificação."}</div>}
   </div>;
 }
 
