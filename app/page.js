@@ -340,6 +340,9 @@ function mapMatch(match) {
   const when = match.scheduled_at ? new Date(match.scheduled_at) : null;
   return {
     id: match.id,
+    dateKey: when ? `${when.getFullYear()}-${String(when.getMonth()+1).padStart(2,"0")}-${String(when.getDate()).padStart(2,"0")}` : "sem-data",
+    date: when ? when.toLocaleDateString("pt-BR") : "Data a definir",
+    dateLong: when ? when.toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }) : "Data a definir",
     time: when ? when.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "A definir",
     court: match.court || "Quadra a definir",
     round: `${match.group?.name || match.phase}${match.round_number ? ` · Rodada ${match.round_number}` : ""}`,
@@ -618,7 +621,7 @@ function Stat({ icon, label, value, note, tone, progress }) {
 
 function MatchCard({ match, onScore, onEdit, canScore = false, canEdit = false }) {
   return <article className="match-card">
-    <div className="match-top"><span className={`status ${match.status.toLowerCase()}`}>{match.status === "Encerrada" ? "✓ " : ""}{match.status}</span><span>{match.time} · {match.court}</span><button>•••</button></div>
+    <div className="match-top"><span className={`status ${match.status.toLowerCase()}`}>{match.status === "Encerrada" ? "✓ " : ""}{match.status}</span><span>{match.date} · {match.time} · {match.court}</span><button>•••</button></div>
     <div className="round">{match.round}</div>
     <div className="versus">
       <TeamMark name={match.a} color={match.ca} /><div className="score">{match.sa ?? "–"} <small>×</small> {match.sb ?? "–"}</div><TeamMark name={match.b} color={match.cb} />
@@ -649,9 +652,20 @@ function Activity({ icon, tone, title, text, time }) {
 }
 
 function Matches({ matches, setModal, canManage, canScore, canEdit }) {
+  const datedGroups = new Map();
+  [...matches].sort((a,b)=>{
+    if(a.dateKey==="sem-data" && b.dateKey==="sem-data") return 0;
+    if(a.dateKey==="sem-data") return 1;
+    if(b.dateKey==="sem-data") return -1;
+    return a.dateKey.localeCompare(b.dateKey) || a.time.localeCompare(b.time);
+  }).forEach(match=>{
+    if(!datedGroups.has(match.dateKey)) datedGroups.set(match.dateKey,{label:match.dateLong,rows:[]});
+    datedGroups.get(match.dateKey).rows.push(match);
+  });
   return <section className="panel full-panel">
     <div className="page-tools"><div><h2>Tabela de partidas</h2><p>Organize horários, quadras e resultados</p></div><div className="tool-actions"><select><option>Todas as rodadas</option><option>Rodada 3</option></select>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newMatch" })}>＋ Nova partida</button>}</div></div>
-    <div className="match-list">{matches.map(m => <MatchCard key={m.id} match={m} onScore={() => setModal({ type: "score", match: m })} onEdit={() => setModal({ type: "editMatch", match: m })} canScore={canScore} canEdit={canEdit} />)}</div>
+    {[...datedGroups.entries()].map(([dateKey,group])=><section className="match-date-group" key={dateKey}><div className="match-date-heading"><span>◷</span><div><strong>{group.label}</strong><small>{group.rows.length} {group.rows.length===1?"partida":"partidas"}</small></div></div><div className="match-list">{group.rows.map(m => <MatchCard key={m.id} match={m} onScore={() => setModal({ type: "score", match: m })} onEdit={() => setModal({ type: "editMatch", match: m })} canScore={canScore} canEdit={canEdit} />)}</div></section>)}
+    {!matches.length && <div className="inline-empty">Nenhuma partida agendada.</div>}
   </section>;
 }
 
