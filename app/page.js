@@ -6,14 +6,15 @@ import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
   claimInvitation, deleteGroup, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
   getCurrentContext, getGroups, getInvitations,
-  getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
+  getAuditLog, getMatchReferees, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
-  updateOrganizationUserRoles, updatePlayer, updateMatch, updateTeam
+  updateOrganizationUserRoles, updatePlayer, updateMatch, updateTeam,
+  createMatchReferee, updateMatchReferee, deleteMatchReferee
 } from "../lib/supabase/data";
 
 const icons = {
   dashboard: "▦", tournaments: "🏆", matches: "◎", teams: "♟", groups: "◫", players: "♙",
-  standings: "≡", reports: "▤", regulations: "§", users: "♧", settings: "⚙"
+  standings: "≡", referees: "⚑", reports: "▤", regulations: "§", users: "♧", settings: "⚙"
 };
 
 const initialMatches = [
@@ -43,7 +44,7 @@ const teams = [
 const menu = [
   ["dashboard", "Visão geral"], ["tournaments", "Torneios"], ["matches", "Partidas"],
   ["teams", "Equipes"], ["groups", "Grupos"], ["players", "Jogadores"], ["standings", "Classificação"],
-  ["reports", "Súmulas"], ["regulations", "Regulamento"], ["users", "Usuários"]
+  ["referees", "Escala de árbitros"], ["reports", "Súmulas"], ["regulations", "Regulamento"], ["users", "Usuários"]
 ];
 
 export default function App() {
@@ -64,6 +65,7 @@ export default function App() {
   const [userRows, setUserRows] = useState([]);
   const [invitationRows, setInvitationRows] = useState([]);
   const [auditRows, setAuditRows] = useState([]);
+  const [refereeRows, setRefereeRows] = useState([]);
   const [activeTournament, setActiveTournament] = useState(null);
 
   useEffect(() => {
@@ -108,12 +110,12 @@ export default function App() {
     const selected = tournamentRows.find(item => item.id === preferredTournamentId) || tournamentRows[0] || null;
     setActiveTournament(selected);
     if (!selected) {
-      setMatches([]); setTeamRows([]); setPlayerRows([]); setGroupRows([]);
+      setMatches([]); setTeamRows([]); setPlayerRows([]); setGroupRows([]); setRefereeRows([]);
       return;
     }
-    const [dbMatches, dbTeams, dbPlayers, dbGroups, dbUsers, dbInvitations, dbAudit] = await Promise.all([
+    const [dbMatches, dbTeams, dbPlayers, dbGroups, dbUsers, dbInvitations, dbAudit, dbReferees] = await Promise.all([
       getTournamentMatches(selected.id), getTeams(selected.id), getPlayers(selected.id), getGroups(selected.id),
-      getOrganizationUsers(organizationId), getInvitations(organizationId), getAuditLog(organizationId)
+      getOrganizationUsers(organizationId), getInvitations(organizationId), getAuditLog(organizationId), getMatchReferees(selected.id)
     ]);
     setMatches(dbMatches.map(mapMatch));
     setTeamRows(dbTeams);
@@ -122,6 +124,7 @@ export default function App() {
     setUserRows(dbUsers);
     setInvitationRows(dbInvitations);
     setAuditRows(dbAudit);
+    setRefereeRows(dbReferees);
   };
   const classification = useMemo(() => buildStandings(teamRows, matches), [teamRows, matches]);
 
@@ -260,6 +263,27 @@ export default function App() {
       return false;
     }
   };
+  const saveRefereeAssignment = async (values, assignment) => {
+    try {
+      if (assignment) await updateMatchReferee(assignment.id, values);
+      else await createMatchReferee(values);
+      await refreshWorkspace(context.organization.id, activeTournament?.id);
+      setModal(null);
+      notify(assignment ? "Escala atualizada com sucesso" : "Árbitro incluído na escala");
+    } catch (error) {
+      notify(error.message || "Não foi possível salvar a escala.");
+    }
+  };
+  const removeRefereeAssignment = async assignment => {
+    if (!window.confirm(`Retirar ${assignment.referee_name} desta partida?`)) return;
+    try {
+      await deleteMatchReferee(assignment.id);
+      await refreshWorkspace(context.organization.id, activeTournament?.id);
+      notify("Árbitro retirado da escala");
+    } catch (error) {
+      notify(error.message || "Não foi possível retirar o árbitro.");
+    }
+  };
   const notify = text => { setToast(text); setTimeout(() => setToast(""), 2600); };
   const title = menu.find(x => x[0] === page)?.[1] || "Visão geral";
   const roleKeys = context?.roles?.length ? context.roles : [context?.role].filter(Boolean);
@@ -322,6 +346,7 @@ export default function App() {
           {page === "dashboard" && (activeTournament ? <Dashboard matches={matches} teams={teamRows} players={playerRows} classification={classification} setPage={setPage} setModal={setModal} canScore={canScore} canManage={canManage} /> : <Onboarding setModal={setModal} canManage={canManage} />)}
           {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} canEdit={hasRole("admin")} />}
           {page === "standings" && <Standings full rows={classification} teams={teamRows} matches={matches} groups={groupRows} />}
+          {page === "referees" && <RefereeSchedule matches={matches} assignments={refereeRows} setModal={setModal} canEdit={hasRole("admin")} onDelete={removeRefereeAssignment} />}
           {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
           {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} canDelete={hasRole("admin")} onDelete={item=>deleteRecord("group",item)} />}
           {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("tournament", item)} />}
@@ -331,7 +356,7 @@ export default function App() {
           {page === "users" && hasRole("admin") && <Users rows={userRows} invitations={invitationRows} setModal={setModal} onDelete={deleteUser} currentUserId={session.user.id} />}
         </div>
       </main>
-      {modal && <Modal data={modal} close={() => setModal(null)} saveScore={saveScore} saveRecord={saveRecord} saveUserRoles={saveUserRoles} saveTeamPlayer={saveTeamPlayer} deletePlayerRecord={item => deleteRecord("player", item)} teams={teamRows} players={playerRows} notify={notify} setRole={setRole} />}
+      {modal && <Modal data={modal} close={() => setModal(null)} saveScore={saveScore} saveRecord={saveRecord} saveUserRoles={saveUserRoles} saveTeamPlayer={saveTeamPlayer} saveRefereeAssignment={saveRefereeAssignment} deletePlayerRecord={item => deleteRecord("player", item)} teams={teamRows} matches={matches} players={playerRows} notify={notify} setRole={setRole} />}
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
       {mobile && <div className="scrim" onClick={() => setMobile(false)} />}
     </div>
@@ -673,6 +698,22 @@ function Matches({ matches, setModal, canManage, canScore, canEdit }) {
   </section>;
 }
 
+function RefereeSchedule({ matches, assignments, setModal, canEdit, onDelete }) {
+  const ordered=[...matches].sort((a,b)=>{
+    if(a.dateKey==="sem-data"&&b.dateKey==="sem-data") return a.time.localeCompare(b.time);
+    if(a.dateKey==="sem-data") return 1;
+    if(b.dateKey==="sem-data") return -1;
+    return a.dateKey.localeCompare(b.dateKey)||a.time.localeCompare(b.time);
+  });
+  return <section className="panel full-panel"><div className="page-tools"><div><h2>Escala de árbitros</h2><p>Árbitros e escolas responsáveis por cada partida</p></div></div>
+    <div className="referee-schedule">{ordered.map(match=>{const matchAssignments=assignments.filter(item=>item.match_id===match.id);return <article className="referee-match" key={match.id}>
+      <div className="referee-match-info"><span className="status agendada">{match.date}</span><h3>{match.a} × {match.b}</h3><p>{match.time} · {match.court} · {match.phase}</p>{canEdit&&<button className="primary-btn" onClick={()=>setModal({type:"refereeAssignment",match})}>＋ Escalar árbitro</button>}</div>
+      <div className="assigned-referees">{matchAssignments.map((assignment,index)=><div className="assigned-referee" key={assignment.id}><span>{index+1}</span><div><strong>{assignment.referee_name}</strong><small>{assignment.assignment_role} · {assignment.school_name}</small></div>{canEdit&&<div><button onClick={()=>setModal({type:"refereeAssignment",match,assignment})}>Editar</button><button className="delete-record" onClick={()=>onDelete(assignment)}>Retirar</button></div>}</div>)}{!matchAssignments.length&&<div className="referee-empty">Nenhum árbitro escalado para esta partida.</div>}</div>
+    </article>})}</div>
+    {!ordered.length&&<div className="inline-empty">Cadastre partidas para montar a escala de árbitros.</div>}
+  </section>;
+}
+
 function Teams({ rows, players, setModal, canManage, canDelete, onDelete }) {
   return <><div className="page-tools"><div><h2>Equipes inscritas</h2><p>{rows.length} equipes cadastradas no torneio</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newTeam" })}>＋ Nova equipe</button>}</div>
     {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button onClick={()=>setModal({type:"editTeam",team:t})}>Editar</button>}{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
@@ -765,10 +806,24 @@ function TeamPlayerForm({ team, player, onCancel, onSave }) {
   </form>;
 }
 
-function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlayer, deletePlayerRecord, teams, players, notify, setRole }) {
+function RefereeAssignmentModal({ match, assignment, close, save }) {
+  const [busy,setBusy]=useState(false);
+  const submit=async event=>{event.preventDefault();setBusy(true);const values=Object.fromEntries(new FormData(event.currentTarget).entries());values.match_id=match.id;await save(values,assignment);setBusy(false)};
+  return <div className="modal-wrap"><form className="modal small" onSubmit={submit}>
+    <button type="button" className="modal-close" onClick={close}>×</button>
+    <span className="eyebrow">{assignment?"EDITAR ESCALA":"ESCALAR ÁRBITRO"}</span><h2>{match.a} × {match.b}</h2><p>{match.date} · {match.time} · {match.court}</p>
+    <label>Nome do árbitro<input name="referee_name" required autoFocus defaultValue={assignment?.referee_name||""} placeholder="Nome completo" /></label>
+    <label>Escola de origem<input name="school_name" required defaultValue={assignment?.school_name||""} placeholder="Nome da escola" /></label>
+    <label>Função na arbitragem<input name="assignment_role" required defaultValue={assignment?.assignment_role||"Árbitro"} placeholder="Ex.: Árbitro principal" /></label>
+    <div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button className="primary-btn" disabled={busy}>{busy?"Salvando…":"Salvar escala"}</button></div>
+  </form></div>;
+}
+
+function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlayer, saveRefereeAssignment, deletePlayerRecord, teams, matches, players, notify, setRole }) {
   if (data.type === "score") return <div className="modal-wrap"><div className="modal"><button className="modal-close" onClick={close}>×</button><span className="eyebrow">ATUALIZAR PLACAR</span><h2>{data.match.a} × {data.match.b}</h2><p>{data.match.round} · {data.match.court}</p><ScoreForm match={data.match} save={saveScore} /></div></div>;
   if (data.type === "report") return <MatchReport match={data.match} number={data.number} players={players} close={close} />;
   if (data.type === "teamDetails") return <TeamDetailsModal team={data.team} players={players.filter(player=>player.team_id===data.team.id)} canEdit={data.canEdit} close={close} savePlayer={saveTeamPlayer} deletePlayer={deletePlayerRecord} />;
+  if (data.type === "refereeAssignment") return <RefereeAssignmentModal match={data.match} assignment={data.assignment} close={close} save={saveRefereeAssignment} />;
   if (data.type === "userRoles") return <UserRolesModal membership={data.membership} close={close} save={saveUserRoles} />;
   if (data.type === "profile") return <div className="modal-wrap"><div className="modal small"><button className="modal-close" onClick={close}>×</button><span className="eyebrow">CONTA CONECTADA</span><h2>Perfil de acesso</h2><p>{data.email}</p><div className="role-options">{["Administrador","Professor","Treinador","Árbitro","Visualizador"].map(r=><button key={r} onClick={()=>{setRole(r);close();notify(`Visualização alterada para ${r}`)}}>{r}<span>→</span></button>)}</div><button className="signout-button" onClick={() => createClient().auth.signOut()}>Sair do sistema</button></div></div>;
   return <RecordModal type={data.type} data={data} teams={teams} close={close} saveRecord={saveRecord} />;
