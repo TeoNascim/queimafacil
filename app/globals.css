@@ -69,3 +69,5 @@
 .match-date-heading{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--line);text-transform:capitalize}
 .match-date-heading>span{width:31px;height:31px;border-radius:8px;display:grid;place-items:center;background:#fff0eb;color:#df5b3b;font-size:16px}
 .match-date-heading strong,.match-date-heading small{display:block}.match-date-heading strong{font:700 13px Manrope}.match-date-heading small{color:var(--muted);font-size:9px;margin-top:2px}
+.group-heading-actions{display:flex;align-items:center;gap:9px}.group-heading-actions .delete-record{padding:5px 8px!important}
+@media(max-width:760px){.group-heading-actions{align-items:flex-end;flex-direction:column}}

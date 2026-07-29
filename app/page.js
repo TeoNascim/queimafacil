@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
-  claimInvitation, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
+  claimInvitation, deleteGroup, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
@@ -235,6 +235,7 @@ export default function App() {
   const deleteRecord = async (type, record) => {
     const settings = {
       player: { name: record.full_name, warning: "O jogador será removido da equipe.", action: () => deletePlayer(record.id), success: "Jogador excluído com sucesso" },
+      group: { name: record.name, warning: "As equipes deste grupo não serão apagadas; elas ficarão como “Sem grupo” para uma nova distribuição.", action: () => deleteGroup(record.id), success: "Grupo excluído com sucesso" },
       team: { name: record.name, warning: "Os jogadores e todas as partidas vinculadas a esta equipe também serão excluídos.", action: () => deleteTeam(record.id), success: "Equipe excluída com sucesso" },
       tournament: { name: record.name, warning: "Equipes, jogadores, grupos, partidas, placares e súmulas deste torneio também serão excluídos.", action: () => deleteTournament(record.id), success: "Torneio excluído com sucesso" }
     }[type];
@@ -322,7 +323,7 @@ export default function App() {
           {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} canEdit={hasRole("admin")} />}
           {page === "standings" && <Standings full rows={classification} teams={teamRows} matches={matches} groups={groupRows} />}
           {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
-          {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} />}
+          {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} canDelete={hasRole("admin")} onDelete={item=>deleteRecord("group",item)} />}
           {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("tournament", item)} />}
           {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} canDelete={hasRole("admin")} onDelete={item => deleteRecord("player", item)} />}
           {page === "reports" && <Reports matches={matches} audit={auditRows} setModal={setModal} notify={notify} />}
@@ -677,12 +678,12 @@ function Teams({ rows, players, setModal, canManage, canDelete, onDelete }) {
     {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button onClick={()=>setModal({type:"editTeam",team:t})}>Editar</button>}{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
 }
 
-function Groups({ rows, teams, setModal, onAssign, canManage }) {
+function Groups({ rows, teams, setModal, onAssign, canManage, canDelete, onDelete }) {
   return <>
     <div className="page-tools"><div><h2>Grupos do torneio</h2><p>Distribua as equipes antes de gerar as rodadas</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newGroup" })}>＋ Novo grupo</button>}</div>
     {rows.length ? <div className="group-grid">{rows.map(group => {
       const members = teams.filter(team => team.group_id === group.id);
-      return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">GRUPO</span><h2>{group.name}</h2></div><strong>{members.length} equipes</strong></div>{members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{canManage && <button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{!members.length && <p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
+      return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">GRUPO</span><h2>{group.name}</h2></div><div className="group-heading-actions"><strong>{members.length} equipes</strong>{canDelete&&<button className="delete-record" onClick={()=>onDelete(group)}>Excluir grupo</button>}</div></div>{members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{canManage && <button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{!members.length && <p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
     })}</div> : <div className="inline-empty">Crie o Grupo A, Grupo B ou a estrutura desejada.</div>}
     {!!teams.length && canManage && <section className="panel distribution-panel"><div className="panel-title"><div><h2>Distribuição das equipes</h2><p>Escolha o grupo de cada equipe</p></div></div>{teams.map(team => <div className="distribution-row" key={team.id}><strong>{team.name}</strong><select value={team.group_id || ""} onChange={event => onAssign(team.id, event.target.value)}><option value="">Sem grupo</option>{rows.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div>)}</section>}
   </>;
