@@ -8,7 +8,7 @@ import {
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getMatchReferees, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
-  updateOrganizationUserRoles, updatePlayer, updateMatch, updateTeam,
+  updatePlayer, updateMatch, updateTeam,
   createMatchReferee, updateMatchReferee, deleteMatchReferee
 } from "../lib/supabase/data";
 
@@ -241,14 +241,29 @@ export default function App() {
       notify(error.message || "Não foi possível excluir o usuário.");
     }
   };
-  const saveUserRoles = async (membership, roles) => {
+  const saveUserRoles = async (membership, roles, fullName) => {
     try {
-      await updateOrganizationUserRoles(membership.id, roles);
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          organization_id: context.organization.id,
+          membership_id: membership.id,
+          user_id: membership.user_id,
+          full_name: fullName,
+          roles
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Não foi possível atualizar o usuário.");
       await refreshWorkspace(context.organization.id, activeTournament?.id);
       setModal(null);
-      notify("Funções atualizadas com sucesso");
+      notify("Usuário atualizado com sucesso");
     } catch (error) {
-      notify(error.message || "Não foi possível atualizar as funções.");
+      notify(error.message || "Não foi possível atualizar o usuário.");
     }
   };
   const deleteRecord = async (type, record) => {
@@ -767,7 +782,7 @@ function Reports({ matches, audit, setModal }) {
 function Users({ rows, invitations, setModal, onDelete, currentUserId }) {
   const descriptions={admin:"Acesso total",professor:"Equipes e atletas",treinador:"Cadastra jogadores e visualiza o sistema",arbitro:"Partidas atribuídas",visualizador:"Somente resultados"};
   return <section className="panel full-panel"><div className="page-tools"><div><h2>Usuários e permissões</h2><p>{rows.length} usuários ativos na CoordEDF</p></div><button className="primary-btn" onClick={() => setModal({ type: "newUser" })}>＋ Criar usuário</button></div>
-    <div className="user-list">{rows.map((item,i)=>{const name=item.profile?.full_name || item.profile?.email || "Usuário"; const initials=name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); const isCurrentUser=item.user_id===currentUserId; const roles=item.roles?.length ? item.roles : [item.role]; return <div className="user-row" key={item.id}><span className={`person-avatar c${i%3}`}>{initials}</span><div><strong>{name}{isCurrentUser && <em className="current-user">Você</em>}</strong><small>{item.profile?.email} · {roles.map(role=>descriptions[role]).join(" · ")}</small></div><div className="role-list">{roles.map(role=><span className={`role role${i%3}`} key={role}>{roleLabel(role)}</span>)}</div><span className="online">● {item.active ? "Ativo" : "Inativo"}</span>{isCurrentUser ? <span className="protected-user" title="Seu próprio acesso está protegido">Protegido</span> : <div className="user-actions"><button className="edit-roles" onClick={()=>setModal({type:"userRoles",membership:item})}>Editar funções</button><button className="delete-user" onClick={()=>onDelete(item)} aria-label={`Excluir usuário ${name}`}>Excluir</button></div>}</div>})}</div>
+    <div className="user-list">{rows.map((item,i)=>{const name=item.profile?.full_name || "Nome não informado"; const initials=(item.profile?.full_name || item.profile?.email || "U").split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); const isCurrentUser=item.user_id===currentUserId; const roles=item.roles?.length ? item.roles : [item.role]; return <div className="user-row" key={item.id}><span className={`person-avatar c${i%3}`}>{initials}</span><div><strong>{name}{isCurrentUser && <em className="current-user">Você</em>}</strong><small>{item.profile?.email} · {roles.map(role=>descriptions[role]).join(" · ")}</small></div><div className="role-list">{roles.map(role=><span className={`role role${i%3}`} key={role}>{roleLabel(role)}</span>)}</div><span className="online">● {item.active ? "Ativo" : "Inativo"}</span>{isCurrentUser ? <span className="protected-user" title="Seu próprio acesso está protegido">Protegido</span> : <div className="user-actions"><button className="edit-roles" onClick={()=>setModal({type:"userRoles",membership:item})}>Editar usuário</button><button className="delete-user" onClick={()=>onDelete(item)} aria-label={`Excluir usuário ${name}`}>Excluir</button></div>}</div>})}</div>
     {!!invitations.filter(invite=>!invite.accepted_at).length && <div className="pending-invites"><h3>Convites pendentes</h3>{invitations.filter(invite=>!invite.accepted_at).map(invite=>{const roles=invite.roles?.length ? invite.roles : [invite.role]; return <div key={invite.id}><span>✉</span><div><strong>{invite.email}</strong><small>{roles.map(roleLabel).join(" + ")} · válido até {new Date(invite.expires_at).toLocaleDateString("pt-BR")}</small></div><button onClick={()=>navigator.clipboard.writeText(`${window.location.origin}/?invite=${invite.token}`)}>Copiar link</button></div>})}</div>}
     <div className="security-note"><span>🔒</span><div><strong>Acesso protegido pelo Supabase</strong><p>Cada pessoa cria a própria senha e recebe somente as permissões do perfil escolhido.</p></div></div>
   </section>;
@@ -784,13 +799,15 @@ const selectableRoles = [
 function UserRolesModal({ membership, close, save }) {
   const initialRoles = membership.roles?.length ? membership.roles : [membership.role];
   const [selected, setSelected] = useState(initialRoles);
+  const [fullName, setFullName] = useState(membership.profile?.full_name || "");
   const name = membership.profile?.full_name || membership.profile?.email || "Usuário";
   const toggle = role => setSelected(current => current.includes(role) ? current.filter(item => item !== role) : [...current, role]);
   return <div className="modal-wrap"><div className="modal small">
     <button className="modal-close" onClick={close}>×</button>
-    <span className="eyebrow">FUNÇÕES DO USUÁRIO</span><h2>{name}</h2><p>Marque todas as funções que essa pessoa exercerá no evento.</p>
+    <span className="eyebrow">EDITAR USUÁRIO</span><h2>{name}</h2><p>Atualize o nome e as funções que essa pessoa exercerá no evento.</p>
+    <label>Nome completo<input value={fullName} onChange={event=>setFullName(event.target.value)} required autoFocus placeholder="Nome do usuário" /></label>
     <div className="role-checkboxes">{selectableRoles.map(([value,label,description])=><label key={value}><input type="checkbox" checked={selected.includes(value)} onChange={()=>toggle(value)} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div>
-    <div className="modal-actions"><button onClick={close}>Cancelar</button><button className="primary-btn" disabled={!selected.length} onClick={()=>save(membership,selected)}>Salvar funções</button></div>
+    <div className="modal-actions"><button onClick={close}>Cancelar</button><button className="primary-btn" disabled={!selected.length || !fullName.trim()} onClick={()=>save(membership,selected,fullName.trim())}>Salvar usuário</button></div>
   </div></div>;
 }
 

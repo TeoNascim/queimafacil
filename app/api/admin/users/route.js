@@ -67,3 +67,60 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message || "Erro interno ao criar usuário." }, { status: 500 });
   }
 }
+
+export async function PATCH(request) {
+  try {
+    const admin = createAdminClient();
+    const caller = await getAuthenticatedUser(admin, request);
+    if (!caller) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+
+    const body = await request.json();
+    const organizationId = String(body.organization_id || "");
+    const membershipId = String(body.membership_id || "");
+    const userId = String(body.user_id || "");
+    const fullName = String(body.full_name || "").trim();
+    const roles = [...new Set(Array.isArray(body.roles) ? body.roles : [])].filter(role => allowedRoles.includes(role));
+
+    if (!organizationId || !membershipId || !userId) return NextResponse.json({ error: "Usuário inválido." }, { status: 400 });
+    if (!fullName) return NextResponse.json({ error: "Informe o nome completo." }, { status: 400 });
+    if (!roles.length) return NextResponse.json({ error: "Selecione ao menos uma função." }, { status: 400 });
+
+    const { data: callerMembership, error: callerError } = await admin
+      .from("memberships")
+      .select("role, roles")
+      .eq("organization_id", organizationId)
+      .eq("user_id", caller.id)
+      .eq("active", true)
+      .maybeSingle();
+    const callerRoles = callerMembership?.roles?.length ? callerMembership.roles : [callerMembership?.role].filter(Boolean);
+    if (callerError || !callerRoles.includes("admin")) {
+      return NextResponse.json({ error: "Somente administradores podem editar usuários." }, { status: 403 });
+    }
+
+    const { data: target } = await admin
+      .from("memberships")
+      .select("id")
+      .eq("id", membershipId)
+      .eq("organization_id", organizationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!target) return NextResponse.json({ error: "Usuário não encontrado nesta organização." }, { status: 404 });
+
+    const { error: profileError } = await admin.from("profiles").update({ full_name: fullName }).eq("id", userId);
+    if (profileError) throw profileError;
+    const { error: accessError } = await admin
+      .from("memberships")
+      .update({ role: roles[0], roles })
+      .eq("id", membershipId)
+      .eq("organization_id", organizationId);
+    if (accessError) throw accessError;
+
+    const { data: authUser } = await admin.auth.admin.getUserById(userId);
+    await admin.auth.admin.updateUserById(userId, {
+      user_metadata: { ...authUser?.user?.user_metadata, full_name: fullName }
+    });
+    return NextResponse.json({ message: "Usuário atualizado com sucesso." });
+  } catch (error) {
+    return NextResponse.json({ error: error.message || "Erro interno ao editar usuário." }, { status: 500 });
+  }
+}
