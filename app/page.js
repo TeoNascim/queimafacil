@@ -17,6 +17,22 @@ const icons = {
   standings: "≡", referees: "⚑", reports: "▤", regulations: "§", users: "♧", settings: "⚙"
 };
 
+const TOURNAMENT_TIME_ZONE = "America/Sao_Paulo";
+
+function tournamentDateParts(date) {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: TOURNAMENT_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date).filter(part => part.type !== "literal").map(part => [part.type, part.value])
+  );
+}
+
 const initialMatches = [
   { id: 1, time: "09:00", court: "Quadra A", round: "Grupo A · Rodada 3", a: "Falcões", b: "Titãs", sa: 2, sb: 1, status: "Encerrada", ca: "#ff6b45", cb: "#6547d9" },
   { id: 2, time: "10:30", court: "Quadra B", round: "Grupo B · Rodada 3", a: "Tempestade", b: "Invictos", sa: null, sb: null, status: "Próxima", ca: "#18a999", cb: "#ef9b28" },
@@ -365,12 +381,13 @@ export default function App() {
 
 function mapMatch(match) {
   const when = match.scheduled_at ? new Date(match.scheduled_at) : null;
+  const parts = when ? tournamentDateParts(when) : null;
   return {
     id: match.id,
-    dateKey: when ? `${when.getFullYear()}-${String(when.getMonth()+1).padStart(2,"0")}-${String(when.getDate()).padStart(2,"0")}` : "sem-data",
-    date: when ? when.toLocaleDateString("pt-BR") : "Data a definir",
-    dateLong: when ? when.toLocaleDateString("pt-BR", { weekday:"long", day:"2-digit", month:"long", year:"numeric" }) : "Data a definir",
-    time: when ? when.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "A definir",
+    dateKey: when ? `${parts.year}-${parts.month}-${parts.day}` : "sem-data",
+    date: when ? when.toLocaleDateString("pt-BR", { timeZone: TOURNAMENT_TIME_ZONE }) : "Data a definir",
+    dateLong: when ? when.toLocaleDateString("pt-BR", { timeZone: TOURNAMENT_TIME_ZONE, weekday:"long", day:"2-digit", month:"long", year:"numeric" }) : "Data a definir",
+    time: when ? when.toLocaleTimeString("pt-BR", { timeZone: TOURNAMENT_TIME_ZONE, hour: "2-digit", minute: "2-digit" }) : "A definir",
     court: match.court || "Quadra a definir",
     round: `${match.group?.name || match.phase}${match.round_number ? ` · Rodada ${match.round_number}` : ""}`,
     a: match.home_team?.name || "Equipe A",
@@ -385,7 +402,7 @@ function mapMatch(match) {
     homeTeamId: match.home_team_id,
     awayTeamId: match.away_team_id,
     phase: match.phase || "Fase de grupos",
-    scheduledAt: when ? new Date(when.getTime() - when.getTimezoneOffset() * 60000).toISOString().slice(0,16) : ""
+    scheduledAt: when ? `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}` : ""
   };
 }
 
