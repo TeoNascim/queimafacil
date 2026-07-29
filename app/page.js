@@ -8,7 +8,7 @@ import {
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
-  updateOrganizationUserRoles
+  updateOrganizationUserRoles, updatePlayer
 } from "../lib/supabase/data";
 
 const icons = {
@@ -245,6 +245,18 @@ export default function App() {
       notify(error.message || "Não foi possível realizar a exclusão.");
     }
   };
+  const saveTeamPlayer = async (values, player) => {
+    try {
+      if (player) await updatePlayer(player.id, values);
+      else await createPlayer(values);
+      await refreshWorkspace(context.organization.id, activeTournament?.id);
+      notify(player ? "Jogador atualizado com sucesso" : "Jogador incluído na equipe");
+      return true;
+    } catch (error) {
+      notify(error.message || "Não foi possível salvar o jogador.");
+      return false;
+    }
+  };
   const notify = text => { setToast(text); setTimeout(() => setToast(""), 2600); };
   const title = menu.find(x => x[0] === page)?.[1] || "Visão geral";
   const roleKeys = context?.roles?.length ? context.roles : [context?.role].filter(Boolean);
@@ -307,7 +319,7 @@ export default function App() {
           {page === "dashboard" && (activeTournament ? <Dashboard matches={matches} teams={teamRows} players={playerRows} classification={classification} setPage={setPage} setModal={setModal} canScore={canScore} canManage={canManage} /> : <Onboarding setModal={setModal} canManage={canManage} />)}
           {page === "matches" && <Matches matches={matches} setModal={setModal} canManage={canManage} canScore={canScore} />}
           {page === "standings" && <Standings full rows={classification} />}
-          {page === "teams" && <Teams rows={teamRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
+          {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
           {page === "groups" && <Groups rows={groupRows} teams={teamRows} setModal={setModal} onAssign={assignGroup} canManage={canManage} />}
           {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("tournament", item)} />}
           {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} canDelete={hasRole("admin")} onDelete={item => deleteRecord("player", item)} />}
@@ -316,7 +328,7 @@ export default function App() {
           {page === "users" && hasRole("admin") && <Users rows={userRows} invitations={invitationRows} setModal={setModal} onDelete={deleteUser} currentUserId={session.user.id} />}
         </div>
       </main>
-      {modal && <Modal data={modal} close={() => setModal(null)} saveScore={saveScore} saveRecord={saveRecord} saveUserRoles={saveUserRoles} teams={teamRows} players={playerRows} notify={notify} setRole={setRole} />}
+      {modal && <Modal data={modal} close={() => setModal(null)} saveScore={saveScore} saveRecord={saveRecord} saveUserRoles={saveUserRoles} saveTeamPlayer={saveTeamPlayer} deletePlayerRecord={item => deleteRecord("player", item)} teams={teamRows} players={playerRows} notify={notify} setRole={setRole} />}
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
       {mobile && <div className="scrim" onClick={() => setMobile(false)} />}
     </div>
@@ -639,9 +651,9 @@ function Matches({ matches, setModal, canManage, canScore }) {
   </section>;
 }
 
-function Teams({ rows, setModal, canManage, canDelete, onDelete }) {
+function Teams({ rows, players, setModal, canManage, canDelete, onDelete }) {
   return <><div className="page-tools"><div><h2>Equipes inscritas</h2><p>{rows.length} equipes cadastradas no torneio</p></div>{canManage && <button className="primary-btn" onClick={() => setModal({ type: "newTeam" })}>＋ Nova equipe</button>}</div>
-    {rows.length ? <div className="team-grid">{rows.map(t => <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>Dados sincronizados</span><div><button>Ver equipe →</button>{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>)}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
+    {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
 }
 
 function Groups({ rows, teams, setModal, onAssign, canManage }) {
@@ -702,9 +714,39 @@ function UserRolesModal({ membership, close, save }) {
   </div></div>;
 }
 
-function Modal({ data, close, saveScore, saveRecord, saveUserRoles, teams, players, notify, setRole }) {
+function TeamDetailsModal({ team, players, canEdit, close, savePlayer, deletePlayer }) {
+  const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const sortedPlayers = [...players].sort((a,b)=>a.full_name.localeCompare(b.full_name));
+  return <div className="modal-wrap"><div className="modal team-details-modal">
+    <button className="modal-close" onClick={close}>×</button>
+    <div className="team-details-header"><div className="big-team-mark" style={{background:team.color||"#ff6945"}}>{(team.short_name||team.name.slice(0,2)).toUpperCase()}</div><div><span className="eyebrow">EQUIPE INSCRITA</span><h2>{team.name}</h2><p>{team.coach_name || "Professor não informado"} · {players.length} jogadores</p></div>{canEdit && <button className="primary-btn" onClick={()=>{setEditing(null);setAdding(true)}}>＋ Incluir jogador</button>}</div>
+    {(adding || editing) && <TeamPlayerForm key={editing?.id || "new"} team={team} player={editing} onCancel={()=>{setAdding(false);setEditing(null)}} onSave={async values=>{const saved=await savePlayer(values,editing);if(saved){setAdding(false);setEditing(null)}}} />}
+    <div className="team-roster">
+      <div className="team-roster-head"><span>Jogador</span><span>Nascimento</span><span>Número</span><span>Categoria</span>{canEdit&&<span>Ações</span>}</div>
+      {sortedPlayers.map(player=><div className="team-roster-row" key={player.id}><div className="person"><span>{player.full_name.split(" ").map(part=>part[0]).join("").slice(0,2)}</span><strong>{player.full_name}</strong></div><span>{player.birth_date?new Date(`${player.birth_date}T12:00:00`).toLocaleDateString("pt-BR"):"—"}</span><span>{player.shirt_number?`#${String(player.shirt_number).padStart(2,"0")}`:"—"}</span><span>{player.category||"—"}</span>{canEdit&&<div className="roster-actions"><button onClick={()=>{setAdding(false);setEditing(player)}}>Editar</button><button className="delete-record" onClick={()=>deletePlayer(player)}>Excluir</button></div>}</div>)}
+      {!sortedPlayers.length && <div className="inline-empty">Nenhum jogador inscrito nesta equipe.</div>}
+    </div>
+  </div></div>;
+}
+
+function TeamPlayerForm({ team, player, onCancel, onSave }) {
+  const [busy,setBusy]=useState(false);
+  const submit=async event=>{event.preventDefault();setBusy(true);const values=Object.fromEntries(new FormData(event.currentTarget).entries());values.team_id=team.id;await onSave(values);setBusy(false)};
+  return <form className="team-player-form" onSubmit={submit}>
+    <div className="form-title"><strong>{player?"Editar jogador":"Incluir jogador"}</strong><small>Equipe: {team.name}</small></div>
+    <label>Nome completo<input name="full_name" required defaultValue={player?.full_name||""} /></label>
+    <label>Data de nascimento<input name="birth_date" type="date" required max={new Date().toISOString().split("T")[0]} defaultValue={player?.birth_date||""} /></label>
+    <label>Número<input name="shirt_number" type="number" min="0" defaultValue={player?.shirt_number||""} /></label>
+    <label>Categoria<input name="category" defaultValue={player?.category||""} placeholder="Ex.: Sub-15" /></label>
+    <div className="form-buttons"><button type="button" onClick={onCancel}>Cancelar</button><button className="primary-btn" disabled={busy}>{busy?"Salvando…":"Salvar jogador"}</button></div>
+  </form>;
+}
+
+function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlayer, deletePlayerRecord, teams, players, notify, setRole }) {
   if (data.type === "score") return <div className="modal-wrap"><div className="modal"><button className="modal-close" onClick={close}>×</button><span className="eyebrow">ATUALIZAR PLACAR</span><h2>{data.match.a} × {data.match.b}</h2><p>{data.match.round} · {data.match.court}</p><ScoreForm match={data.match} save={saveScore} /></div></div>;
   if (data.type === "report") return <MatchReport match={data.match} number={data.number} players={players} close={close} />;
+  if (data.type === "teamDetails") return <TeamDetailsModal team={data.team} players={players.filter(player=>player.team_id===data.team.id)} canEdit={data.canEdit} close={close} savePlayer={saveTeamPlayer} deletePlayer={deletePlayerRecord} />;
   if (data.type === "userRoles") return <UserRolesModal membership={data.membership} close={close} save={saveUserRoles} />;
   if (data.type === "profile") return <div className="modal-wrap"><div className="modal small"><button className="modal-close" onClick={close}>×</button><span className="eyebrow">CONTA CONECTADA</span><h2>Perfil de acesso</h2><p>{data.email}</p><div className="role-options">{["Administrador","Professor","Treinador","Árbitro","Visualizador"].map(r=><button key={r} onClick={()=>{setRole(r);close();notify(`Visualização alterada para ${r}`)}}>{r}<span>→</span></button>)}</div><button className="signout-button" onClick={() => createClient().auth.signOut()}>Sair do sistema</button></div></div>;
   return <RecordModal type={data.type} teams={teams} close={close} saveRecord={saveRecord} />;

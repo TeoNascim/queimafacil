@@ -56,3 +56,12 @@
 .role-checkboxes.compact{grid-template-columns:1fr 1fr}
 .field-title{font-weight:700;font-size:11px;margin-top:15px}
 @media(max-width:760px){.user-row{grid-template-columns:38px 1fr}.user-row .role-list,.user-row .online,.user-row .user-actions,.user-row .protected-user{grid-column:2}.user-actions{justify-content:flex-start}.role-checkboxes.compact{grid-template-columns:1fr}}
+.team-details-modal{width:min(900px,100%);max-height:92vh;overflow:auto}
+.team-details-header{display:grid;grid-template-columns:58px 1fr auto;align-items:center;gap:14px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.team-details-header h2{margin:3px 0}.team-details-header p{margin:3px 0 0;color:var(--muted)}
+.team-roster{margin-top:18px}.team-roster-head,.team-roster-row{display:grid;grid-template-columns:minmax(190px,1.4fr) 110px 70px 100px 145px;gap:12px;align-items:center}
+.team-roster-head{padding:8px 10px;color:#929ca4;font-size:9px;font-weight:700;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.team-roster-row{padding:11px 10px;border-bottom:1px solid #eef1f2;font-size:11px}.roster-actions{display:flex;gap:5px}.roster-actions>button:first-child{border:1px solid #cfdde4;background:#f5fafc;color:#315f72;border-radius:7px;padding:7px 9px;font-weight:700}
+.team-player-form{display:grid;grid-template-columns:1.5fr 1fr .6fr 1fr;gap:10px;background:#f6f8f9;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:16px}
+.team-player-form label{margin:0;font-size:10px}.team-player-form input{margin-top:5px;padding:9px}.form-title{grid-column:1/-1;display:flex;justify-content:space-between}.form-title small{color:var(--muted)}.form-buttons{grid-column:1/-1;display:flex;justify-content:flex-end;gap:7px}.form-buttons button{border:1px solid var(--line);background:white;border-radius:8px;padding:8px 12px;font-weight:700}
+@media(max-width:760px){.team-details-header{grid-template-columns:50px 1fr}.team-details-header>.primary-btn{grid-column:1/-1}.team-roster-head{display:none}.team-roster-row{grid-template-columns:1fr 1fr}.team-roster-row .person{grid-column:1/-1}.roster-actions{grid-column:1/-1}.team-player-form{grid-template-columns:1fr}.team-player-form>*{grid-column:1!important}}
