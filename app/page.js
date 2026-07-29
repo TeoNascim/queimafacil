@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "../lib/supabase/client";
 import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
-  claimInvitation, createInvitation, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
+  claimInvitation, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
   getCurrentContext, getGroups, getInvitations,
   getAuditLog, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
@@ -136,6 +136,10 @@ export default function App() {
     return <LoginScreen />;
   }
 
+  if (session.user.app_metadata?.must_change_password) {
+    return <ForcePasswordChange session={session} onComplete={setSession} />;
+  }
+
   const saveScore = async (id, a, b, burnedA, burnedB) => {
     try {
       await updateMatchScore(id, Number(a), Number(b), session.user.id, Number(burnedA), Number(burnedB));
@@ -151,17 +155,33 @@ export default function App() {
         const created = await createTournament(context.organization.id, session.user.id, values);
         await refreshWorkspace(context.organization.id, created.id);
       } else {
+        if (type === "newUser") {
+          const response = await fetch("/api/admin/users", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              organization_id: context.organization.id,
+              full_name: values.full_name,
+              email: values.email,
+              password: values.password,
+              roles: values.roles
+            })
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Não foi possível criar o usuário.");
+          await refreshWorkspace(context.organization.id, activeTournament?.id);
+          setModal(null);
+          notify("Usuário criado com senha temporária");
+          return;
+        }
         if (!activeTournament) throw new Error("Crie um torneio primeiro.");
         if (type === "newTeam") await createTeam(activeTournament.id, values);
         if (type === "newGroup") await createGroup(activeTournament.id, values);
         if (type === "newPlayer") await createPlayer(values);
         if (type === "newMatch") await createMatch(activeTournament.id, values);
-        if (type === "newUser") {
-          const invitation = await createInvitation(context.organization.id, session.user.id, values);
-          const link = `${window.location.origin}/?invite=${invitation.token}`;
-          await navigator.clipboard.writeText(link);
-          notify("Convite criado e link copiado");
-        }
         await refreshWorkspace(context.organization.id, activeTournament.id);
       }
       setModal(null); notify("Registro salvo no Supabase");
@@ -462,6 +482,77 @@ function LoginScreen() {
   </main>;
 }
 
+function ForcePasswordChange({ session, onComplete }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async event => {
+    event.preventDefault();
+    setError("");
+    if (newPassword.length < 8) return setError("A nova senha deve ter pelo menos 8 caracteres.");
+    if (newPassword !== confirmation) return setError("A confirmação não corresponde à nova senha.");
+    if (newPassword === currentPassword) return setError("A nova senha deve ser diferente da senha temporária.");
+    setBusy(true);
+    const supabase = createClient();
+    const { error: validationError } = await supabase.auth.signInWithPassword({
+      email: session.user.email,
+      password: currentPassword
+    });
+    if (validationError) {
+      setError("A senha temporária informada está incorreta.");
+      setBusy(false);
+      return;
+    }
+    const { error: passwordError } = await supabase.auth.updateUser({ password: newPassword });
+    if (passwordError) {
+      setError("Não foi possível salvar a nova senha.");
+      setBusy(false);
+      return;
+    }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const response = await fetch("/api/auth/password-changed", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionData.session?.access_token || session.access_token}` }
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      setError(result.error || "A senha mudou, mas o acesso ainda não pôde ser liberado. Tente novamente.");
+      setBusy(false);
+      return;
+    }
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) {
+      await supabase.auth.signOut();
+      return;
+    }
+    onComplete(refreshed.session);
+  };
+
+  return <main className="login-page">
+    <section className="login-visual">
+      <div className="login-brand"><span className="brand-mark">Q</span><strong>Queima<span>Fácil</span></strong></div>
+      <div><span className="eyebrow light">PRIMEIRO ACESSO</span><h1>Crie sua senha pessoal.</h1><p>Este procedimento acontece somente uma vez e libera seu acesso ao torneio.</p></div>
+      <small>Senha pessoal · Acesso protegido</small>
+    </section>
+    <section className="login-form-area">
+      <form className="login-form" onSubmit={submit}>
+        <span className="mobile-login-brand">QueimaFácil</span>
+        <h2>Troca obrigatória de senha</h2>
+        <p>Olá, {session.user.user_metadata?.full_name || session.user.email}. Substitua a senha temporária recebida do administrador.</p>
+        <label>Senha temporária<input type="password" required value={currentPassword} onChange={event=>setCurrentPassword(event.target.value)} autoFocus /></label>
+        <label>Nova senha<input type="password" required minLength="8" value={newPassword} onChange={event=>setNewPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label>
+        <label>Confirme a nova senha<input type="password" required minLength="8" value={confirmation} onChange={event=>setConfirmation(event.target.value)} /></label>
+        {error && <div className="auth-message">{error}</div>}
+        <button className="login-submit" disabled={busy}>{busy ? "Salvando…" : "Trocar senha e entrar"}</button>
+        <small>Depois da troca, use somente a sua nova senha.</small>
+      </form>
+    </section>
+  </main>;
+}
+
 function Onboarding({ setModal, canManage = true }) {
   return <section className="empty-state">
     <div className="empty-icon">🏆</div>
@@ -583,7 +674,7 @@ function Reports({ matches, audit, setModal }) {
 
 function Users({ rows, invitations, setModal, onDelete, currentUserId }) {
   const descriptions={admin:"Acesso total",professor:"Equipes e atletas",treinador:"Cadastra jogadores e visualiza o sistema",arbitro:"Partidas atribuídas",visualizador:"Somente resultados"};
-  return <section className="panel full-panel"><div className="page-tools"><div><h2>Usuários e permissões</h2><p>{rows.length} usuários ativos na CoordEDF</p></div><button className="primary-btn" onClick={() => setModal({ type: "newUser" })}>＋ Convidar usuário</button></div>
+  return <section className="panel full-panel"><div className="page-tools"><div><h2>Usuários e permissões</h2><p>{rows.length} usuários ativos na CoordEDF</p></div><button className="primary-btn" onClick={() => setModal({ type: "newUser" })}>＋ Criar usuário</button></div>
     <div className="user-list">{rows.map((item,i)=>{const name=item.profile?.full_name || item.profile?.email || "Usuário"; const initials=name.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); const isCurrentUser=item.user_id===currentUserId; const roles=item.roles?.length ? item.roles : [item.role]; return <div className="user-row" key={item.id}><span className={`person-avatar c${i%3}`}>{initials}</span><div><strong>{name}{isCurrentUser && <em className="current-user">Você</em>}</strong><small>{item.profile?.email} · {roles.map(role=>descriptions[role]).join(" · ")}</small></div><div className="role-list">{roles.map(role=><span className={`role role${i%3}`} key={role}>{roleLabel(role)}</span>)}</div><span className="online">● {item.active ? "Ativo" : "Inativo"}</span>{isCurrentUser ? <span className="protected-user" title="Seu próprio acesso está protegido">Protegido</span> : <div className="user-actions"><button className="edit-roles" onClick={()=>setModal({type:"userRoles",membership:item})}>Editar funções</button><button className="delete-user" onClick={()=>onDelete(item)} aria-label={`Excluir usuário ${name}`}>Excluir</button></div>}</div>})}</div>
     {!!invitations.filter(invite=>!invite.accepted_at).length && <div className="pending-invites"><h3>Convites pendentes</h3>{invitations.filter(invite=>!invite.accepted_at).map(invite=>{const roles=invite.roles?.length ? invite.roles : [invite.role]; return <div key={invite.id}><span>✉</span><div><strong>{invite.email}</strong><small>{roles.map(roleLabel).join(" + ")} · válido até {new Date(invite.expires_at).toLocaleDateString("pt-BR")}</small></div><button onClick={()=>navigator.clipboard.writeText(`${window.location.origin}/?invite=${invite.token}`)}>Copiar link</button></div>})}</div>}
     <div className="security-note"><span>🔒</span><div><strong>Acesso protegido pelo Supabase</strong><p>Cada pessoa cria a própria senha e recebe somente as permissões do perfil escolhido.</p></div></div>
@@ -692,7 +783,7 @@ function RegulationTopic({ title, children }) {
 }
 
 function RecordModal({ type, teams, close, saveRecord }) {
-  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", newUser: "Convidar usuário" };
+  const titles = { newTournament: "Criar torneio", newTeam: "Cadastrar equipe", newGroup: "Criar grupo", newPlayer: "Cadastrar jogador", newMatch: "Agendar partida", newUser: "Criar usuário e senha" };
   const submit = event => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -728,7 +819,7 @@ function RecordModal({ type, teams, close, saveRecord }) {
       <label>Fase<input name="phase" defaultValue="Fase de grupos" /></label>
       <div className="form-grid"><label>Data e horário<input name="scheduled_at" type="datetime-local" /></label><label>Quadra<input name="court" placeholder="Quadra A" /></label></div>
     </>}
-    {type === "newUser" && <><label>E-mail do convidado<input name="email" type="email" required placeholder="pessoa@escola.com.br" autoFocus /></label><div className="field-title">Funções no evento</div><div className="role-checkboxes compact">{selectableRoles.map(([value,label,description])=><label key={value}><input name="roles" value={value} type="checkbox" defaultChecked={value==="visualizador"} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div><div className="security-note"><span>🔗</span><div><strong>Link individual</strong><p>Ao salvar, o link será copiado para você enviar ao convidado.</p></div></div></>}
+    {type === "newUser" && <><label>Nome completo<input name="full_name" required placeholder="Nome do usuário" autoFocus /></label><label>E-mail do usuário<input name="email" type="email" required placeholder="pessoa@escola.com.br" /></label><label>Senha temporária<input name="password" type="text" minLength="8" required placeholder="Mínimo de 8 caracteres" autoComplete="off" /></label><div className="field-title">Funções no evento</div><div className="role-checkboxes compact">{selectableRoles.map(([value,label,description])=><label key={value}><input name="roles" value={value} type="checkbox" defaultChecked={value==="visualizador"} /><span><strong>{label}</strong><small>{description}</small></span></label>)}</div><div className="security-note"><span>🔑</span><div><strong>Primeiro acesso simplificado</strong><p>Informe o e-mail e a senha temporária à pessoa. Nenhuma confirmação por e-mail será necessária, e o sistema exigirá uma nova senha no primeiro login.</p></div></div></>}
     <div className="modal-actions"><button type="button" onClick={close}>Cancelar</button><button className="primary-btn">Salvar no Supabase</button></div>
   </form></div>;
 }

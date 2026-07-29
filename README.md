@@ -20,6 +20,7 @@ Crie um arquivo `.env.local` a partir de `.env.example` e informe:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
 ```
 
 Depois, instale as dependências e execute o projeto:
