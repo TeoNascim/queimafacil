@@ -892,7 +892,7 @@ function MatchReport({ match, number, players, close }) {
     <div className="burned-control">
       <strong>CONTROLE DE JOGADORES QUEIMADOS</strong>
       <p>Risque um quadrado para cada jogador queimado.</p>
-      <div className="burned-grid">{Array.from({length:22},(_,index) => <span key={index} aria-label={`Jogador queimado ${index+1}`}>{index+1}</span>)}</div>
+      <div className="burned-grid">{Array.from({length:22},(_,index) => <span key={index} aria-label={`Marcação de jogador queimado ${index+1}`} />)}</div>
     </div>
     <div className="sheet-team-bottom"><span>POSSE INICIAL: ☐ SIM ☐ NÃO</span><span>JOGADORES QUEIMADOS: <b>{burned || "____"}</b></span></div>
   </section>;
