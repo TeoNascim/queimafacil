@@ -913,7 +913,7 @@ function Regulations() {
     <header className="regulation-hero"><span className="eyebrow">DOCUMENTO OFICIAL</span><h2>17º Torneio de Queimada — 2026</h2><p>Regulamento oficial · CoordEDF</p><button className="primary-btn no-print" onClick={() => window.print()}>Imprimir regulamento</button></header>
     <RegulationSection number="1" title="Da participação"><ul>
       <li>Serão inscritos 22 crianças/estudantes e, no máximo, um auxiliar técnico (apoio), que poderão ser transportados sob responsabilidade da comissão organizadora do evento.</li>
-      <li>Poderão participar alunos devidamente matriculados e cursando o 5º ano do Ensino Fundamental da Secretaria de Educação do Município de Hortolândia, nascidos no ano de 2014.</li>
+      <li>Poderão participar alunos devidamente matriculados e cursando o 5º ano do Ensino Fundamental da Secretaria de Educação do Município de Hortolândia, nascidos no ano de 2015.</li>
       <li>Cada escola poderá inscrever 22 alunos, sendo 11 do sexo masculino e 11 do sexo feminino. Dez jogadores de cada sexo serão os iniciantes do jogo e os outros dois serão considerados reservas para eventuais substituições, quando houver necessidade.</li>
     </ul></RegulationSection>
     <RegulationSection number="2" title="Da responsabilidade dos professores"><ul>
