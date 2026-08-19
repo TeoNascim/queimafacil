@@ -431,7 +431,7 @@ function mapMatch(match) {
 function buildStandings(teamRows, matchRows) {
   const table = new Map(teamRows.map(team => [team.id, {
     p: 0, team: team.name, tag: team.short_name || team.name.slice(0,3).toUpperCase(),
-    id: team.id, pts: 0, j: 0, v: 0, d: 0, burnedFor: 0, burnedAgainst: 0,
+    id: team.id, pts: 0, j: 0, v: 0, e: 0, d: 0, burnedFor: 0, burnedAgainst: 0,
     color: team.color || "#ff6945"
   }]));
   const finished = matchRows.filter(match => match.status === "Encerrada");
@@ -443,6 +443,7 @@ function buildStandings(teamRows, matchRows) {
     away.burnedFor += Number(match.burnedB || 0); away.burnedAgainst += Number(match.burnedA || 0);
     if (match.sa > match.sb) { home.v++; away.d++; home.pts += 3; }
     else if (match.sb > match.sa) { away.v++; home.d++; away.pts += 3; }
+    else { home.e++; away.e++; home.pts++; away.pts++; }
   });
   const rows = [...table.values()];
   const headToHead = (a, b) => {
@@ -708,8 +709,8 @@ function Standings({ full = false, rows = [], teams = [], matches = [], groups =
   const displayedRows=groupFilter ? buildStandings(teams.filter(team=>team.group_id===groupFilter),matches) : rows;
   return <div className={full ? "panel full-panel" : ""}>
     {full && <div className="page-tools"><div><h2>{groupFilter ? `Classificação — ${groups.find(group=>group.id===groupFilter)?.name||"Grupo"}` : "Classificação geral"}</h2><p>Desempate: confronto direto (2 equipes), queimados a favor e queimados contra</p></div><select value={groupFilter} onChange={event=>setGroupFilter(event.target.value)} aria-label="Filtrar classificação por grupo"><option value="">Classificação geral</option>{groups.map(group=><option key={group.id} value={group.id}>{group.name}</option>)}</select></div>}
-    <div className="table-wrap"><table><thead><tr><th>#</th><th>Equipe</th><th>PTS</th><th>J</th><th>V</th><th>D</th><th>QF</th><th>QC</th></tr></thead>
-      <tbody>{displayedRows.map(r => <tr key={r.team}><td><span className={r.p <= 2 ? "rank top" : "rank"}>{r.p}</span></td><td><div className="table-team"><span style={{ background: r.color }}>{r.tag}</span><strong>{r.team}</strong></div></td><td><b>{r.pts}</b></td><td>{r.j}</td><td>{r.v}</td><td>{r.d}</td><td>{r.burnedFor}</td><td>{r.burnedAgainst}</td></tr>)}</tbody>
+    <div className="table-wrap"><table><thead><tr><th>#</th><th>Equipe</th><th>PTS</th><th>J</th><th>V</th><th>E</th><th>D</th><th>QF</th><th>QC</th></tr></thead>
+      <tbody>{displayedRows.map(r => <tr key={r.team}><td><span className={r.p <= 2 ? "rank top" : "rank"}>{r.p}</span></td><td><div className="table-team"><span style={{ background: r.color }}>{r.tag}</span><strong>{r.team}</strong></div></td><td><b>{r.pts}</b></td><td>{r.j}</td><td>{r.v}</td><td>{r.e}</td><td>{r.d}</td><td>{r.burnedFor}</td><td>{r.burnedAgainst}</td></tr>)}</tbody>
     </table></div>
     {!displayedRows.length && <div className="inline-empty">{groupFilter ? "Nenhuma equipe cadastrada neste grupo." : "Cadastre equipes para iniciar a classificação."}</div>}
   </div>;
@@ -873,10 +874,21 @@ function Modal({ data, close, saveScore, saveRecord, saveUserRoles, saveTeamPlay
 
 function MatchReport({ match, number, players, close }) {
   const rosterFor = teamId => {
-    const registered = players
-      .filter(player => player.team_id === teamId && player.active !== false)
-      .sort((a,b) => a.full_name.localeCompare(b.full_name, "pt-BR"))
-      .slice(0,22);
+    const teamPlayers = players.filter(player => player.team_id === teamId && player.active !== false);
+    const numbered = teamPlayers
+      .filter(player => Number.isInteger(Number(player.shirt_number)) && Number(player.shirt_number) > 0)
+      .sort((a,b) => Number(a.shirt_number)-Number(b.shirt_number) || a.full_name.localeCompare(b.full_name, "pt-BR"));
+    const unnumbered = teamPlayers
+      .filter(player => !Number.isInteger(Number(player.shirt_number)) || Number(player.shirt_number) <= 0)
+      .sort((a,b) => a.full_name.localeCompare(b.full_name, "pt-BR"));
+    const usedNumbers = new Set(numbered.map(player => Number(player.shirt_number)));
+    let nextNumber = 1;
+    const registered = [...numbered.map(player => ({...player, sheetNumber:Number(player.shirt_number)})), ...unnumbered.map(player => {
+      while (usedNumbers.has(nextNumber)) nextNumber++;
+      const sheetNumber = nextNumber++;
+      usedNumbers.add(sheetNumber);
+      return {...player, sheetNumber};
+    })].slice(0,22);
     return Array.from({length:22}, (_,index) => registered[index] || null);
   };
   const TeamSheet = ({ name, color, burned, roster }) => <section className="sheet-team">
@@ -885,7 +897,7 @@ function MatchReport({ match, number, players, close }) {
     <div className="sheet-roster">
       <strong>ATLETAS INSCRITOS</strong>
       <div className="sheet-roster-list">{roster.map((player,index) => <div key={player?.id || `empty-${index}`}>
-        <b>{String(index+1).padStart(2,"0")}.</b>
+        <b>{String(player?.sheetNumber ?? index+1).padStart(2,"0")}.</b>
         <span>{player?.full_name || "________________________________"}</span>
       </div>)}</div>
     </div>
