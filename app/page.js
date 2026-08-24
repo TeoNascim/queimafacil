@@ -525,7 +525,8 @@ function buildPhaseTwoPreview(groups, teams, matches) {
     const memberIds = new Set(group.group_teams?.length ? group.group_teams.map(item => item.team_id) : teams.filter(team => team.group_id === group.id).map(team => team.id));
     const members = teams.filter(team => memberIds.has(team.id));
     const groupMatches = matches.filter(match => match.groupId === group.id || (!match.groupId && memberIds.has(match.homeTeamId) && memberIds.has(match.awayTeamId) && !String(match.phase).toLowerCase().includes("2º fase")));
-    return { ranking: buildStandings(members, groupMatches), complete: members.length >= 2 && groupMatches.length > 0 && groupMatches.every(match => match.status === "Encerrada") };
+    const finishedMatches = groupMatches.filter(match => match.status === "Encerrada");
+    return { ranking: buildStandings(members, groupMatches), hasResults: finishedMatches.length > 0, complete: members.length >= 2 && groupMatches.length > 0 && groupMatches.every(match => match.status === "Encerrada") };
   });
   const slotRules = [
     [[0, 0, "1º do Grupo 1"], [4, 0, "1º do Grupo 5"], [1, 1, "2º do Grupo 2"], [2, 1, "2º do Grupo 3"]],
@@ -534,7 +535,7 @@ function buildPhaseTwoPreview(groups, teams, matches) {
     [[3, 0, "1º do Grupo 4"], [7, 0, "1º do Grupo 8"], [0, 1, "2º do Grupo 1"], [4, 1, "2º do Grupo 5"]]
   ];
   const finalized = rankings.every(item => item.complete);
-  return { ready, finalized, groups: slotRules.map((rules, index) => ({ name: `2º fase ${index + 1}`, slots: rules.map(([groupIndex, rankingIndex, label]) => ({ label, team: rankings[groupIndex]?.ranking?.[rankingIndex] || null, provisional: !rankings[groupIndex]?.complete })) })) };
+  return { ready, finalized, groups: slotRules.map((rules, index) => ({ name: `2º fase ${index + 1}`, slots: rules.map(([groupIndex, rankingIndex, label]) => ({ label, team: rankings[groupIndex]?.hasResults ? rankings[groupIndex]?.ranking?.[rankingIndex] || null : null, provisional: !rankings[groupIndex]?.complete })) })) };
 }
 
 function PublicDashboard({ tournamentId }) {
@@ -839,7 +840,7 @@ function Groups({ rows, teams, preview, setModal, onAssign, onGenerateSecondPhas
     const memberIds=new Set(group.group_teams?.length ? group.group_teams.map(item=>item.team_id) : teams.filter(team=>team.group_id===group.id).map(team=>team.id));
     const members=teams.filter(team=>memberIds.has(team.id));
     const previewGroup=phase===2 ? preview?.groups?.[secondPhaseGroupPosition(group)-1] : null;
-    return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">{phase===1?"GRUPO":"2º FASE"}</span><h2>{group.name}</h2></div><div className="group-heading-actions"><strong>{phase===2?`${previewGroup?.slots.filter(slot=>slot.team).length||0}/4 vagas`:`${members.length} equipes`}</strong>{canDelete&&<button className="delete-record" onClick={()=>onDelete(group)}>Excluir grupo</button>}</div></div>{phase===2&&previewGroup ? previewGroup.slots.map((slot,index)=><div className="qualification-slot" key={slot.label}><span>{index+1}</span><div><small>{slot.label}</small><strong>{slot.team?.team||"Aguardando classificação"}</strong></div><em className={slot.provisional?"provisional":"confirmed"}>{slot.provisional?"Provisória":"Confirmada"}</em></div>) : members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{phase===1&&canManage&&<button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{phase===1&&!members.length&&<p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
+    return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">{phase===1?"GRUPO":"2º FASE"}</span><h2>{group.name}</h2></div><div className="group-heading-actions"><strong>{phase===2?`${previewGroup?.slots.filter(slot=>slot.team).length||0}/4 vagas`:`${members.length} equipes`}</strong>{canDelete&&<button className="delete-record" onClick={()=>onDelete(group)}>Excluir grupo</button>}</div></div>{phase===2&&previewGroup ? previewGroup.slots.map((slot,index)=><div className="qualification-slot" key={slot.label}><span>{index+1}</span><div>{slot.team&&<small>{slot.label}</small>}<strong>{slot.team?.team||slot.label}</strong>{!slot.team&&<small>Aguardando o primeiro resultado deste grupo</small>}</div><em className={slot.provisional?"provisional":"confirmed"}>{slot.provisional?"Provisória":"Confirmada"}</em></div>) : members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{phase===1&&canManage&&<button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{phase===1&&!members.length&&<p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
   })}</div></>}</>;
   return <>
     <div className="page-tools"><div><h2>Grupos do torneio</h2><p>A prévia da 2ª fase acompanha a classificação em tempo real</p></div>{canManage && <div className="tool-actions">{preview?.finalized&&<button onClick={onGenerateSecondPhase}>Confirmar classificados</button>}<button className="primary-btn" onClick={() => setModal({ type: "newGroup" })}>＋ Novo grupo</button></div>}</div>
