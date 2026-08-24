@@ -513,7 +513,8 @@ function firstPhaseGroupPosition(group) {
 }
 
 function secondPhaseGroupPosition(group) {
-  return Number(group.name.match(/\d+/)?.[0] || Number(group.sort_order) - 100);
+  const finalNumber = group.name.trim().match(/(\d+)$/)?.[1];
+  return Number(finalNumber || Number(group.sort_order) - 100);
 }
 
 function buildPhaseTwoPreview(groups, teams, matches) {
