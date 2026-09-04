@@ -5,7 +5,7 @@ import { createClient } from "../lib/supabase/client";
 import {
   assignTeamToGroup, createGroup, createMatch, createPlayer, createTeam, createTournament,
   claimInvitation, deleteGroup, deleteOrganizationUser, deletePlayer, deleteTeam, deleteTournament,
-  getCurrentContext, getGroups, getInvitations, generateSecondPhase, prepareSecondPhase,
+  getCurrentContext, getGroups, getInvitations, generateSecondPhase, prepareSecondPhase, generateSemifinal, prepareSemifinal,
   getAuditLog, getMatchReferees, getOrganizationUsers, getPlayers, getPublicTournament, getTeams,
   getTournamentMatches, getTournaments, publishTournament, roleLabel, updateMatchScore,
   updatePlayer, updateMatch, updateTeam,
@@ -142,9 +142,15 @@ export default function App() {
     ]);
     let dbGroups = initialGroups;
     const firstGroups = dbGroups.filter(group => Number(group.phase_number || 1) === 1);
-    const secondGroups = dbGroups.filter(group => Number(group.phase_number || 1) === 2);
+    let secondGroups = dbGroups.filter(group => Number(group.phase_number || 1) === 2);
     if (firstGroups.length === 8 && secondGroups.length < 4) {
       await prepareSecondPhase(selected.id);
+      dbGroups = await getGroups(selected.id);
+      secondGroups = dbGroups.filter(group => Number(group.phase_number || 1) === 2);
+    }
+    const semifinalGroups = dbGroups.filter(group => Number(group.phase_number || 1) === 3);
+    if (secondGroups.length === 4 && semifinalGroups.length < 2) {
+      await prepareSemifinal(selected.id);
       dbGroups = await getGroups(selected.id);
     }
     setMatches(dbMatches.map(mapMatch));
@@ -158,12 +164,19 @@ export default function App() {
   };
   const classification = useMemo(() => buildStandings(teamRows, matches), [teamRows, matches]);
   const phaseTwoPreview = useMemo(() => buildPhaseTwoPreview(groupRows, teamRows, matches), [groupRows, teamRows, matches]);
-  const displayGroups = useMemo(() => groupRows.map(group => {
+  const phaseTwoDisplayGroups = useMemo(() => groupRows.map(group => {
     if (Number(group.phase_number || 1) !== 2) return group;
     const position = secondPhaseGroupPosition(group);
     const previewGroup = phaseTwoPreview.groups[position - 1];
     return previewGroup ? { ...group, group_teams: previewGroup.slots.filter(slot => slot.team).map(slot => ({ team_id: slot.team.id, seed_label: slot.label })) } : group;
   }), [groupRows, phaseTwoPreview]);
+  const semifinalPreview = useMemo(() => buildSemifinalPreview(phaseTwoDisplayGroups, teamRows, matches), [phaseTwoDisplayGroups, teamRows, matches]);
+  const displayGroups = useMemo(() => phaseTwoDisplayGroups.map(group => {
+    if (Number(group.phase_number || 1) !== 3) return group;
+    const position = finalGroupPosition(group);
+    const previewGroup = semifinalPreview.groups[position - 1];
+    return previewGroup ? { ...group, group_teams: previewGroup.slots.filter(slot => slot.team).map(slot => ({ team_id: slot.team.id, seed_label: slot.label })) } : group;
+  }), [phaseTwoDisplayGroups, semifinalPreview]);
 
   if (publicId === undefined) return <div className="auth-loading"><span className="brand-mark">Q</span><p>Preparando o QueimaFácil…</p></div>;
   if (publicId) return <PublicDashboard tournamentId={publicId} />;
@@ -186,6 +199,11 @@ export default function App() {
       const phaseTwoGroupIds = new Set(groupRows.filter(group => Number(group.phase_number || 1) === 2).map(group => group.id));
       if (!phaseTwoPreview.finalized && selectedMatch && (phaseTwoGroupIds.has(selectedMatch.groupId) || String(selectedMatch.phase).toLowerCase().includes("2º fase"))) {
         notify("O placar da 2ª fase será liberado quando os classificados estiverem confirmados.");
+        return;
+      }
+      const semifinalGroupIds = new Set(groupRows.filter(group => Number(group.phase_number || 1) === 3).map(group => group.id));
+      if (!semifinalPreview.finalized && selectedMatch && (semifinalGroupIds.has(selectedMatch.groupId) || String(selectedMatch.phase).toLowerCase().includes("semifinal"))) {
+        notify("O placar da semifinal será liberado quando os classificados estiverem confirmados.");
         return;
       }
       await updateMatchScore(id, Number(a), Number(b), session.user.id, Number(burnedA), Number(burnedB));
@@ -262,6 +280,20 @@ export default function App() {
       notify("Classificados da 2ª fase confirmados com sucesso");
     } catch (error) {
       notify(error.message || "Não foi possível gerar a 2º fase.");
+    }
+  };
+  const confirmSemifinal = async () => {
+    if (!semifinalPreview.finalized) {
+      notify("A prévia da semifinal está sendo atualizada conforme os resultados da 2ª fase.");
+      return;
+    }
+    const assignments = semifinalPreview.groups.map(group => ({ team_ids: group.slots.map(slot => slot.team.id) }));
+    try {
+      await generateSemifinal(activeTournament.id, assignments);
+      await refreshWorkspace(context.organization.id, activeTournament.id);
+      notify("Classificados da semifinal confirmados com sucesso");
+    } catch (error) {
+      notify(error.message || "Não foi possível confirmar a semifinal.");
     }
   };
   const publish = async tournamentId => {
@@ -424,7 +456,7 @@ export default function App() {
           {page === "standings" && <Standings full rows={classification} teams={teamRows} matches={matches} groups={displayGroups} />}
           {page === "referees" && <RefereeSchedule matches={matches} assignments={refereeRows} setModal={setModal} canEdit={hasRole("admin")} onDelete={removeRefereeAssignment} />}
           {page === "teams" && <Teams rows={teamRows} players={playerRows} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("team", item)} />}
-          {page === "groups" && <Groups rows={displayGroups} teams={teamRows} preview={phaseTwoPreview} setModal={setModal} onAssign={assignGroup} onGenerateSecondPhase={generatePhaseTwo} canManage={canManage} canDelete={hasRole("admin")} onDelete={item=>deleteRecord("group",item)} />}
+          {page === "groups" && <Groups rows={displayGroups} teams={teamRows} phaseTwoPreview={phaseTwoPreview} semifinalPreview={semifinalPreview} setModal={setModal} onAssign={assignGroup} onGenerateSecondPhase={generatePhaseTwo} onConfirmSemifinal={confirmSemifinal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item=>deleteRecord("group",item)} />}
           {page === "tournaments" && <Tournaments rows={tournaments} active={activeTournament} onPublish={publish} setPage={setPage} setModal={setModal} canManage={canManage} canDelete={hasRole("admin")} onDelete={item => deleteRecord("tournament", item)} />}
           {page === "players" && <Players rows={playerRows} setModal={setModal} canManage={canManagePlayers} canDelete={hasRole("admin")} onDelete={item => deleteRecord("player", item)} />}
           {page === "reports" && <Reports matches={matches} audit={auditRows} setModal={setModal} notify={notify} />}
@@ -536,6 +568,30 @@ function buildPhaseTwoPreview(groups, teams, matches) {
   ];
   const finalized = rankings.every(item => item.complete);
   return { ready, finalized, groups: slotRules.map((rules, index) => ({ name: `2º fase ${index + 1}`, slots: rules.map(([groupIndex, rankingIndex, label]) => ({ label, team: rankings[groupIndex]?.hasResults ? rankings[groupIndex]?.ranking?.[rankingIndex] || null : null, provisional: !rankings[groupIndex]?.complete })) })) };
+}
+
+function finalGroupPosition(group) {
+  const finalNumber = group.name.trim().match(/(\d+)\D*$/)?.[1];
+  return Number(finalNumber || Number(group.sort_order) - 200);
+}
+
+function buildSemifinalPreview(groups, teams, matches) {
+  const phaseGroups = groups.filter(group => Number(group.phase_number || 1) === 2).sort((a, b) => secondPhaseGroupPosition(a) - secondPhaseGroupPosition(b));
+  const ready = phaseGroups.length === 4 && phaseGroups.every((group, index) => secondPhaseGroupPosition(group) === index + 1);
+  if (!ready) return { ready: false, finalized: false, groups: [] };
+  const rankings = phaseGroups.map(group => {
+    const memberIds = new Set((group.group_teams || []).map(item => item.team_id));
+    const members = teams.filter(team => memberIds.has(team.id));
+    const groupMatches = matches.filter(match => match.groupId === group.id);
+    const finishedMatches = groupMatches.filter(match => match.status === "Encerrada");
+    return { ranking: buildStandings(members, groupMatches), hasResults: finishedMatches.length > 0, complete: members.length === 4 && groupMatches.length > 0 && groupMatches.every(match => match.status === "Encerrada") };
+  });
+  const slotRules = [
+    [[0, 0, "1º da 2ª fase 1"], [2, 0, "1º da 2ª fase 3"], [1, 1, "2º da 2ª fase 2"], [3, 1, "2º da 2ª fase 4"]],
+    [[1, 0, "1º da 2ª fase 2"], [3, 0, "1º da 2ª fase 4"], [0, 1, "2º da 2ª fase 1"], [2, 1, "2º da 2ª fase 3"]]
+  ];
+  const finalized = rankings.every(item => item.complete);
+  return { ready, finalized, groups: slotRules.map((rules, index) => ({ name: `SEMIFINAL ${index + 1}`, slots: rules.map(([groupIndex, rankingIndex, label]) => ({ label, team: rankings[groupIndex]?.hasResults ? rankings[groupIndex]?.ranking?.[rankingIndex] || null : null, provisional: !rankings[groupIndex]?.complete })) })) };
 }
 
 function PublicDashboard({ tournamentId }) {
@@ -833,20 +889,21 @@ function Teams({ rows, players, setModal, canManage, canDelete, onDelete }) {
     {rows.length ? <div className="team-grid">{rows.map(t => {const total=players.filter(player=>player.team_id===t.id).length; return <article className="team-card" key={t.id}><div className="big-team-mark" style={{ background: t.color || "#ff6945" }}>{(t.short_name || t.name.slice(0, 2)).toUpperCase()}</div><div><span className="group-tag">{t.group?.name || "SEM GRUPO"}</span><h3>{t.name}</h3><p>{t.coach_name || "Professor não informado"}</p></div><div className="team-meta"><span>{total} {total===1 ? "jogador inscrito" : "jogadores inscritos"}</span><div><button onClick={()=>setModal({type:"teamDetails",team:t,canEdit:canDelete})}>Ver detalhes →</button>{canDelete && <button onClick={()=>setModal({type:"editTeam",team:t})}>Editar</button>}{canDelete && <button className="delete-record" onClick={() => onDelete(t)}>Excluir</button>}</div></div></article>})}</div> : <div className="inline-empty">Nenhuma equipe cadastrada.</div>}</>;
 }
 
-function Groups({ rows, teams, preview, setModal, onAssign, onGenerateSecondPhase, canManage, canDelete, onDelete }) {
+function Groups({ rows, teams, phaseTwoPreview, semifinalPreview, setModal, onAssign, onGenerateSecondPhase, onConfirmSemifinal, canManage, canDelete, onDelete }) {
   const firstPhase=rows.filter(group=>Number(group.phase_number||1)===1);
   const secondPhase=rows.filter(group=>Number(group.phase_number||1)===2);
-  const GroupCards=({groups,phase}) => <>{groups.length>0&&<><div className="phase-heading"><div><span>{phase===1?"PRIMEIRA FASE":"SEGUNDA FASE"}</span><h2>{phase===1?"Grupos classificatórios":"Grupos gerados pelos classificados"}</h2></div><strong>{groups.length} grupos</strong></div><div className="group-grid">{groups.map(group => {
+  const semifinals=rows.filter(group=>Number(group.phase_number||1)===3);
+  const GroupCards=({groups,phase,preview}) => <>{groups.length>0&&<><div className="phase-heading"><div><span>{phase===1?"PRIMEIRA FASE":phase===2?"SEGUNDA FASE":"SEMIFINAL"}</span><h2>{phase===1?"Grupos classificatórios":phase===2?"Grupos gerados pelos classificados":"Grupos classificados da 2ª fase"}</h2></div><strong>{groups.length} grupos</strong></div><div className="group-grid">{groups.map(group => {
     const memberIds=new Set(group.group_teams?.length ? group.group_teams.map(item=>item.team_id) : teams.filter(team=>team.group_id===group.id).map(team=>team.id));
     const members=teams.filter(team=>memberIds.has(team.id));
-    const previewGroup=phase===2 ? preview?.groups?.[secondPhaseGroupPosition(group)-1] : null;
-    return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">{phase===1?"GRUPO":"2º FASE"}</span><h2>{group.name}</h2></div><div className="group-heading-actions"><strong>{phase===2?`${previewGroup?.slots.filter(slot=>slot.team).length||0}/4 vagas`:`${members.length} equipes`}</strong>{canDelete&&<button className="delete-record" onClick={()=>onDelete(group)}>Excluir grupo</button>}</div></div>{phase===2&&previewGroup ? previewGroup.slots.map((slot,index)=><div className="qualification-slot" key={slot.label}><span>{index+1}</span><div>{slot.team&&<small>{slot.label}</small>}<strong>{slot.team?.team||slot.label}</strong>{!slot.team&&<small>Aguardando o primeiro resultado deste grupo</small>}</div><em className={slot.provisional?"provisional":"confirmed"}>{slot.provisional?"Provisória":"Confirmada"}</em></div>) : members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{phase===1&&canManage&&<button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{phase===1&&!members.length&&<p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
+    const position=phase===2?secondPhaseGroupPosition(group):phase===3?finalGroupPosition(group):0;
+    const previewGroup=phase>1?preview?.groups?.[position-1]:null;
+    return <section className="panel group-panel" key={group.id}><div className="panel-title"><div><span className="group-tag">{phase===1?"GRUPO":phase===2?"2ª FASE":"SEMIFINAL"}</span><h2>{group.name}</h2></div><div className="group-heading-actions"><strong>{phase>1?`${previewGroup?.slots.filter(slot=>slot.team).length||0}/4 vagas`:`${members.length} equipes`}</strong>{canDelete&&<button className="delete-record" onClick={()=>onDelete(group)}>Excluir grupo</button>}</div></div>{phase>1&&previewGroup ? previewGroup.slots.map((slot,index)=><div className="qualification-slot" key={slot.label}><span>{index+1}</span><div>{slot.team&&<small>{slot.label}</small>}<strong>{slot.team?.team||slot.label}</strong>{!slot.team&&<small>Aguardando o primeiro resultado deste grupo</small>}</div><em className={slot.provisional?"provisional":"confirmed"}>{slot.provisional?"Provisória":"Confirmada"}</em></div>) : members.map(team => <div className="group-team" key={team.id}><span style={{background:team.color || "#ff6945"}}>{(team.short_name || team.name.slice(0,2)).toUpperCase()}</span><strong>{team.name}</strong>{phase===1&&canManage&&<button onClick={() => onAssign(team.id, "")}>Remover</button>}</div>)}{phase===1&&!members.length&&<p className="group-empty">Nenhuma equipe neste grupo.</p>}</section>;
   })}</div></>}</>;
   return <>
-    <div className="page-tools"><div><h2>Grupos do torneio</h2><p>A prévia da 2ª fase acompanha a classificação em tempo real</p></div>{canManage && <div className="tool-actions">{preview?.finalized&&<button onClick={onGenerateSecondPhase}>Confirmar classificados</button>}<button className="primary-btn" onClick={() => setModal({ type: "newGroup" })}>＋ Novo grupo</button></div>}</div>
-    {preview?.ready&&<div className={`phase-preview-notice ${preview.finalized?"finalized":""}`}><strong>{preview.finalized?"Classificação definida":"Classificação provisória"}</strong><span>{preview.finalized?"Todas as partidas da primeira fase terminaram. As vagas da 2ª fase estão confirmadas.":"As equipes podem entrar ou sair das vagas conforme novos placares são publicados."}</span></div>}
-    {rows.length ? <><GroupCards groups={firstPhase} phase={1}/><GroupCards groups={secondPhase} phase={2}/></> : <div className="inline-empty">Crie o Grupo 1 até o Grupo 8 para iniciar a primeira fase.</div>}
-    {!!teams.length && canManage && <section className="panel distribution-panel"><div className="panel-title"><div><h2>Distribuição da primeira fase</h2><p>Escolha o grupo inicial de cada equipe</p></div></div>{teams.map(team => <div className="distribution-row" key={team.id}><strong>{team.name}</strong><select value={team.group_id || ""} onChange={event => onAssign(team.id, event.target.value)}><option value="">Sem grupo</option>{firstPhase.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></div>)}</section>}
+    <div className="page-tools"><div><h2>Grupos do torneio</h2><p>As próximas fases acompanham a classificação em tempo real</p></div>{canManage&&<div className="tool-actions">{phaseTwoPreview?.finalized&&<button onClick={onGenerateSecondPhase}>Confirmar 2ª fase</button>}{semifinalPreview?.finalized&&<button onClick={onConfirmSemifinal}>Confirmar semifinal</button>}<button className="primary-btn" onClick={()=>setModal({type:"newGroup"})}>＋ Novo grupo</button></div>}</div>
+    {rows.length?<><GroupCards groups={firstPhase} phase={1}/>{phaseTwoPreview?.ready&&<div className={`phase-preview-notice ${phaseTwoPreview.finalized?"finalized":""}`}><strong>{phaseTwoPreview.finalized?"2ª fase definida":"2ª fase provisória"}</strong><span>{phaseTwoPreview.finalized?"As vagas da 2ª fase estão confirmadas.":"As equipes podem mudar conforme os resultados da primeira fase."}</span></div>}<GroupCards groups={secondPhase} phase={2} preview={phaseTwoPreview}/>{semifinalPreview?.ready&&<div className={`phase-preview-notice ${semifinalPreview.finalized?"finalized":""}`}><strong>{semifinalPreview.finalized?"Semifinal definida":"Semifinal provisória"}</strong><span>{semifinalPreview.finalized?"As vagas da semifinal estão confirmadas.":"As equipes podem mudar conforme os resultados da 2ª fase."}</span></div>}<GroupCards groups={semifinals} phase={3} preview={semifinalPreview}/></>:<div className="inline-empty">Crie o Grupo 1 até o Grupo 8 para iniciar a primeira fase.</div>}
+    {!!teams.length&&canManage&&<section className="panel distribution-panel"><div className="panel-title"><div><h2>Distribuição da primeira fase</h2><p>Escolha o grupo inicial de cada equipe</p></div></div>{teams.map(team=><div className="distribution-row" key={team.id}><strong>{team.name}</strong><select value={team.group_id||""} onChange={event=>onAssign(team.id,event.target.value)}><option value="">Sem grupo</option>{firstPhase.map(group=><option key={group.id} value={group.id}>{group.name}</option>)}</select></div>)}</section>}
   </>;
 }
 
