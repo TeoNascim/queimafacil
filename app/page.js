@@ -504,7 +504,8 @@ export default function App() {
 }
 
 function mapMatch(match) {
-  const when = match.scheduled_at ? new Date(match.scheduled_at) : null;
+  const parsedDate = match.scheduled_at ? new Date(match.scheduled_at) : null;
+  const when = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null;
   const parts = when ? tournamentDateParts(when) : null;
   return {
     id: match.id,
